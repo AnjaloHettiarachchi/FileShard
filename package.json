@@ -19,7 +19,7 @@
     "moleculer",
     "distributed-file-system"
   ],
-  "author": "",
+  "author": "Anjalo Hettiarachchi",
   "devDependencies": {
     "eslint": "^6.8.0",
     "eslint-plugin-import": "^2.20.2",
