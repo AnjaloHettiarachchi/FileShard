@@ -5,6 +5,7 @@
   "scripts": {
     "build": "tsc --build tsconfig.json",
     "dev": "ts-node ./node_modules/moleculer/bin/moleculer-runner.js --hot --repl --config moleculer.config.ts services/**/*.service.ts",
+    "dev:file": "ts-node ./node_modules/moleculer/bin/moleculer-runner.js --hot --repl --config moleculer.config.ts -i 4 services/file.service.ts",
     "start": "NAMESPACE=FileShard moleculer-runner",
     "cli": "moleculer connect NATS --ns=FileShard",
     "ci": "jest --watch",
@@ -30,18 +31,21 @@
     "jest-cli": "^25.1.0",
     "moleculer-repl": "^0.6.2",
     "ts-jest": "^25.3.0",
-    "ts-node": "^8.8.1"
+    "ts-node": "^8.8.1",
+    "prettier": "^2.2.1"
   },
   "dependencies": {
-    "moleculer-web": "^0.9.0",
-    "moleculer-db": "^0.8.4",
-    "moleculer-db-adapter-mongo": "^0.4.7",
-    "nats": "^1.3.2",
-    "moleculer": "^0.14.0",
-    "typescript": "^3.8.3",
     "@types/jest": "^25.1.4",
     "@types/mkdirp": "^1.0.0",
-    "@types/node": "^13.9.8"
+    "@types/node": "^13.9.8",
+    "ioredis": "^4.27.1",
+    "moleculer": "^0.14.0",
+    "moleculer-db": "^0.8.4",
+    "moleculer-db-adapter-mongo": "^0.4.7",
+    "moleculer-web": "^0.9.0",
+    "nats": "^1.3.2",
+    "redlock": "^4.2.0",
+    "typescript": "^3.8.3"
   },
   "engines": {
     "node": ">= 10.x.x"

@@ -1,11 +1,6 @@
 "use strict";
 import { hostname } from "os";
-import {
-	BrokerOptions,
-	Errors,
-	MetricRegistry,
-	ServiceBroker,
-} from "moleculer";
+import { BrokerOptions, Errors, MetricRegistry } from "moleculer";
 
 /**
  * Moleculer ServiceBroker configuration file
@@ -36,7 +31,7 @@ const brokerConfig: BrokerOptions = {
 	// Namespace of nodes to segment your nodes on the same network.
 	namespace: "FileShard",
 	// Unique node identifier. Must be unique in a namespace.
-	nodeID: hostname().toLowerCase() + "-" + process.pid,
+	nodeID: hostname().toLowerCase() + "-" + process.hrtime()[1],
 	// Custom metadata store. Store here what you want. Accessing: `this.broker.metadata`
 	metadata: {},
 
@@ -69,7 +64,7 @@ const brokerConfig: BrokerOptions = {
 
 	// Define a cacher.
 	// More info: https://moleculer.services/docs/0.14/caching.html
-	cacher: "Memory",
+	cacher: "Redis",
 
 	// Define a serializer.
 	// Available values: "JSON", "Avro", "ProtoBuf", "MsgPack", "Notepack", "Thrift".
