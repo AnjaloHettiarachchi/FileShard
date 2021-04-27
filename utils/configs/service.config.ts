@@ -1,24 +1,28 @@
 import Moleculer, { Cacher } from "moleculer";
-import { CACHE_KEYS } from "../constants";
+import { CACHE_KEYS } from "../../constants";
+import { getServiceCacheKey } from "../common";
 
 export class ServiceConfig {
 	private readonly serviceName: string = "";
 	private readonly cacheService: Cacher = null;
+	private readonly serviceCurrentMasterCacheKey: string = "";
 
 	public constructor(serviceName: string, cacheService: Cacher) {
 		this.serviceName = serviceName;
 		this.cacheService = cacheService;
-	}
-
-	public async set(key: string, value: any) {
-		const cacheKey = this.getCacheKey(
+		this.serviceCurrentMasterCacheKey = getServiceCacheKey(
 			this.serviceName,
 			CACHE_KEYS.SERVICE_CURRENT_MASTER
 		);
+	}
 
+	public async set(key: string, value: any) {
 		switch (key) {
 			case CACHE_KEYS.SERVICE_CURRENT_MASTER: {
-				await this.cacheService.set(cacheKey, value);
+				await this.cacheService.set(
+					this.serviceCurrentMasterCacheKey,
+					value
+				);
 				break;
 			}
 			default: {
@@ -31,14 +35,12 @@ export class ServiceConfig {
 		key: string
 	): Promise<Moleculer.GenericObject | string | null | Error> {
 		let res: {};
-		const cacheKey = this.getCacheKey(
-			this.serviceName,
-			CACHE_KEYS.SERVICE_CURRENT_MASTER
-		);
 
 		switch (key) {
 			case CACHE_KEYS.SERVICE_CURRENT_MASTER: {
-				res = await this.cacheService.get(cacheKey);
+				res = await this.cacheService.get(
+					this.serviceCurrentMasterCacheKey
+				);
 				break;
 			}
 			default: {
@@ -49,9 +51,5 @@ export class ServiceConfig {
 		}
 
 		return res;
-	}
-
-	protected getCacheKey(serviceName: string, genericCacheKey: string) {
-		return `${serviceName.toUpperCase()}_SERVICE.${genericCacheKey}`;
 	}
 }

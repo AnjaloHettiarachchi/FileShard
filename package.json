@@ -1,9 +1,9 @@
 {
   "name": "fileshard",
   "version": "0.1.0",
-  "description": "A demo distributed filr system.",
+  "description": "A prototype Distributed File System implemented with Moleculer JS.",
   "scripts": {
-    "build": "tsc --build tsconfig.json",
+    "build": "rm -rf ./dist && tsc --build tsconfig.json",
     "dev": "ts-node ./node_modules/moleculer/bin/moleculer-runner.js --hot --repl --config moleculer.config.ts services/**/*.service.ts",
     "dev:file": "ts-node ./node_modules/moleculer/bin/moleculer-runner.js --hot --repl --config moleculer.config.ts -i 4 services/file.service.ts",
     "start": "NAMESPACE=FileShard moleculer-runner",
@@ -11,9 +11,11 @@
     "ci": "jest --watch",
     "test": "jest --coverage",
     "lint": "eslint --ext .js,.ts .",
+    "prettify": "prettier --write \"**/*.{ts,js}\"",
     "dc:up": "docker-compose up --build -d",
     "dc:logs": "docker-compose logs -f",
-    "dc:down": "docker-compose down"
+    "dc:down": "docker-compose down",
+    "prod:start": "node ./node_modules/moleculer/bin/moleculer-runner.js --config ./dist/moleculer.config.js"
   },
   "keywords": [
     "microservices",

@@ -1,5 +1,6 @@
 import Moleculer, { Cacher } from "moleculer";
-import { CACHE_KEYS } from "../constants";
+import { CACHE_KEYS } from "../../constants";
+import { getNodeCacheKey } from "../common";
 
 export class NodeConfig {
 	private readonly nodeId: string = "";
@@ -10,11 +11,11 @@ export class NodeConfig {
 	public constructor(nodeId: string, cacheService: Cacher) {
 		this.nodeId = nodeId;
 		this.cacheService = cacheService;
-		this.nodeCurrentMasterCacheKey = this.getCacheKey(
+		this.nodeCurrentMasterCacheKey = getNodeCacheKey(
 			this.nodeId,
 			CACHE_KEYS.NODE_CURRENT_MASTER
 		);
-		this.nodeAmIMasterCacheKey = this.getCacheKey(
+		this.nodeAmIMasterCacheKey = getNodeCacheKey(
 			this.nodeId,
 			CACHE_KEYS.NODE_AM_I_MASTER
 		);
@@ -67,9 +68,5 @@ export class NodeConfig {
 		}
 
 		return res;
-	}
-
-	protected getCacheKey(nodeId: string, genericCacheKey: string) {
-		return `${nodeId.toUpperCase()}.${genericCacheKey}`;
 	}
 }

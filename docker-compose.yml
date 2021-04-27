@@ -18,17 +18,17 @@ services:
     networks:
       - internal
 
-  greeter:
-    build:
-      context: .
-    image: fileshard
-    env_file: docker-compose.env
-    environment:
-      SERVICES: greeter
-    depends_on:
-      - nats
-    networks:
-      - internal
+  #  greeter:
+  #    build:
+  #      context: .
+  #    image: fileshard
+  #    env_file: docker-compose.env
+  #    environment:
+  #      SERVICES: greeter
+  #    depends_on:
+  #      - nats
+  #    networks:
+  #      - internal
 
   file:
     build:
@@ -42,20 +42,20 @@ services:
     networks:
       - internal
     deploy:
-      replicas: 3
+      replicas: 4
 
-  products:
-    build:
-      context: .
-    image: fileshard
-    env_file: docker-compose.env
-    environment:
-      SERVICES: products
-    depends_on:
-      - mongo
-      - nats
-    networks:
-      - internal
+  #  products:
+  #    build:
+  #      context: .
+  #    image: fileshard
+  #    env_file: docker-compose.env
+  #    environment:
+  #      SERVICES: products
+  #    depends_on:
+  #      - mongo
+  #      - nats
+  #    networks:
+  #      - internal
 
   mongo:
     image: mongo:4

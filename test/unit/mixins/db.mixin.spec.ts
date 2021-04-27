@@ -5,7 +5,6 @@ import DbService from "moleculer-db";
 import DbMixin from "../../../mixins/db.mixin";
 
 describe("Test DB mixin", () => {
-
 	describe("Test schema generator", () => {
 		const broker = new ServiceBroker({ logger: false, cacher: "Memory" });
 
@@ -19,7 +18,9 @@ describe("Test DB mixin", () => {
 			// @ts-ignore
 			expect(schema.adapter).toBeInstanceOf(DbService.MemoryAdapter);
 			expect(schema.started).toBeDefined();
-			expect(schema.events["cache.clean.my-collection"]).toBeInstanceOf(Function);
+			expect(schema.events["cache.clean.my-collection"]).toBeInstanceOf(
+				Function
+			);
 		});
 
 		it("check cache event handler", async () => {
@@ -28,14 +29,16 @@ describe("Test DB mixin", () => {
 			const schema = new DbMixin("my-collection").start();
 
 			// @ts-ignore
-			await schema.events["cache.clean.my-collection"].call({ broker, fullName: "my-service" });
+			await schema.events["cache.clean.my-collection"].call({
+				broker,
+				fullName: "my-service",
+			});
 
 			expect(broker.cacher.clean).toBeCalledTimes(1);
 			expect(broker.cacher.clean).toBeCalledWith("my-service.*");
 		});
 
 		describe("Check service started handler", () => {
-
 			it("should not call seedDB method", async () => {
 				const schema = new DbMixin("my-collection").start();
 
@@ -43,7 +46,12 @@ describe("Test DB mixin", () => {
 				const seedDBFn = jest.fn();
 
 				// @ts-ignore
-				await schema.started.call({ broker, logger: broker.logger, adapter: schema.adapter, seedDB: seedDBFn });
+				await schema.started.call({
+					broker,
+					logger: broker.logger,
+					adapter: schema.adapter,
+					seedDB: seed,
+				});
 
 				expect(schema.adapter.count).toBeCalledTimes(1);
 				expect(schema.adapter.count).toBeCalledWith();
@@ -58,7 +66,12 @@ describe("Test DB mixin", () => {
 				const seedDBFn = jest.fn();
 
 				// @ts-ignore
-				await schema.started.call({ broker, logger: broker.logger, adapter: schema.adapter, seedDB: seedDBFn });
+				await schema.started.call({
+					broker,
+					logger: broker.logger,
+					adapter: schema.adapter,
+					seedDB: seedDBFn,
+				});
 
 				expect(schema.adapter.count).toBeCalledTimes(2);
 				expect(schema.adapter.count).toBeCalledWith();
@@ -81,5 +94,4 @@ describe("Test DB mixin", () => {
 			expect(ctx.broadcast).toBeCalledWith("cache.clean.my-collection");
 		});
 	});
-
 });

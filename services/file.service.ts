@@ -1,8 +1,8 @@
 import { types } from "util";
 import Moleculer, { Service, ServiceBroker } from "moleculer";
-import { NodeConfig } from "../utils/node.config";
-import { ServiceConfig } from "../utils/service.config";
+import { ServiceConfig } from "../utils/configs/service.config";
 import { CACHE_KEYS } from "../constants";
+import { WorkerNode } from "../utils/models/workerNode";
 import MoleculerServerError = Moleculer.Errors.MoleculerServerError;
 import MoleculerError = Moleculer.Errors.MoleculerError;
 
@@ -15,20 +15,20 @@ interface NodeItem {
 	];
 }
 
+interface EventContext extends Moleculer.Context {
+	params: { node: NodeItem };
+}
+
 export default class FileService extends Service {
-	private currentOtherNodeList = Array<string>();
 	private readonly SERVICE_NAME = "file";
+	private readonly workerNode: WorkerNode = null;
 	private readonly serviceConfig: ServiceConfig = null;
-	private readonly nodeConfig: NodeConfig = null;
 
 	public constructor(broker: ServiceBroker) {
 		super(broker);
+		this.workerNode = new WorkerNode(this.broker.nodeID);
 		this.serviceConfig = new ServiceConfig(
 			this.SERVICE_NAME,
-			this.broker.cacher
-		);
-		this.nodeConfig = new NodeConfig(
-			this.broker.nodeID,
 			this.broker.cacher
 		);
 
@@ -53,8 +53,17 @@ export default class FileService extends Service {
 				"$node.connected"(ctx: { params: { node: NodeItem } }) {
 					this.handleNodeConnectedEvent(ctx.params.node);
 				},
-				"$node.disconnected"(ctx: { params: { node: NodeItem } }) {
-					this.handleNodeDisconnectEvent(ctx.params.node);
+				"$node.disconnected"(ctx: EventContext) {
+					this.handleNodeDisconnectEvent(ctx);
+				},
+				"bully.election"(ctx: EventContext) {
+					this.handleBullyElectionEvent(ctx);
+				},
+				"bully.alive"(ctx: EventContext) {
+					this.handleBullyAliveEvent(ctx);
+				},
+				"bully.victory"(ctx: EventContext) {
+					this.handleBullyVictoryEvent(ctx);
 				},
 			},
 			started: async () => {
@@ -73,13 +82,9 @@ export default class FileService extends Service {
 		const currentServiceMasterNode = await this.serviceConfig.get(
 			CACHE_KEYS.SERVICE_CURRENT_MASTER
 		);
-		const nodeConfigMaster = await this.nodeConfig.get(
-			CACHE_KEYS.NODE_CURRENT_MASTER
-		);
-		const otherNodes = this.currentOtherNodeList;
-		const amIMaster = await this.nodeConfig.get(
-			CACHE_KEYS.NODE_AM_I_MASTER
-		);
+		const nodeConfigMaster = this.workerNode.coordinatorNodeId;
+		const otherNodes = this.workerNode.otherWorkerNodeIds;
+		const amIMaster = this.workerNode.selfCoordinatorState;
 
 		return {
 			NodeID: myNodeID,
@@ -87,7 +92,7 @@ export default class FileService extends Service {
 			ServiceMasterNodeID: currentServiceMasterNode,
 			NodeConfigMasterNodeID: nodeConfigMaster,
 			otherNodes,
-			amIMaster,
+			amIMas,
 		};
 	}
 
@@ -118,25 +123,14 @@ export default class FileService extends Service {
 						CACHE_KEYS.SERVICE_CURRENT_MASTER,
 						this.broker.nodeID
 					);
-					await this.nodeConfig.set(
-						CACHE_KEYS.NODE_CURRENT_MASTER,
-						this.broker.nodeID
-					);
 
-					await this.nodeConfig.set(
-						CACHE_KEYS.NODE_AM_I_MASTER,
-						true
-					);
+					this.workerNode.coordinatorNodeId = this.broker.nodeID;
+					this.workerNode.selfCoordinatorState = true;
 					//	Service already have a Master.
 				} else {
-					await this.nodeConfig.set(
-						CACHE_KEYS.NODE_CURRENT_MASTER,
-						res
-					);
-					await this.nodeConfig.set(
-						CACHE_KEYS.NODE_AM_I_MASTER,
-						res === this.broker.nodeID
-					);
+					this.workerNode.coordinatorNodeId = res as string;
+					this.workerNode.selfCoordinatorState =
+						res === this.broker.nodeID;
 				}
 			});
 	}
@@ -146,25 +140,27 @@ export default class FileService extends Service {
 	}
 
 	private addToCurrentNodeList(nodeItem: NodeItem) {
+		const nodeIds = this.workerNode.otherWorkerNodeIds;
+
 		nodeItem.services.forEach(service => {
 			if (
 				service.name === this.SERVICE_NAME &&
-				!this.currentOtherNodeList.includes(nodeItem.id)
+				!(nodeIds && nodeIds.includes(nodeItem.id))
 			) {
-				this.currentOtherNodeList.push(nodeItem.id);
+				nodeIds.push(nodeItem.id);
 			}
 		});
 	}
 
 	private removeFromCurrentNodeList(nodeItem: NodeItem) {
+		const otherNodes = this.workerNode.otherWorkerNodeIds;
+
 		nodeItem.services.forEach(service => {
 			if (
 				service.name === this.SERVICE_NAME &&
-				!this.currentOtherNodeList.includes(nodeItem.id)
+				!(otherNodes && otherNodes.includes(nodeItem.id))
 			) {
-				this.currentOtherNodeList.splice(
-					this.currentOtherNodeList.indexOf(nodeItem.id)
-				);
+				otherNodes.splice(otherNodes.indexOf(nodeItem.id));
 			}
 		});
 	}
@@ -174,22 +170,32 @@ export default class FileService extends Service {
 			.call("$node.list", { withServices: true })
 			.then((res: [NodeItem]) => {
 				res.forEach(item => {
-					this.handleNodeConnectedEvent(item);
+					this.addToCurrentNodeList(item);
 				});
 			});
 	}
 
-	private async handleNodeDisconnectEvent(disconnectedNode: NodeItem) {
-		const masterNodeId = await this.nodeConfig.get(
-			CACHE_KEYS.NODE_CURRENT_MASTER
-		);
+	private async handleBullyElectionEvent(ctx: EventContext) {
+		//
+	}
 
-		if (disconnectedNode.id === masterNodeId) {
-			this.logger.debug(
-				"Master node has disconnected. Needs to elect a new leader."
-			);
+	private async handleBullyAliveEvent(ctx: EventContext) {
+		//
+	}
+
+	private async handleBullyVictoryEvent(ctx: EventContext) {
+		//
+	}
+
+	private async handleNodeDisconnectEvent(ctx: EventContext) {
+		const masterNodeId = this.workerNode.coordinatorNodeId;
+		const isElectionAlreadyStarted = this.workerNode.selfElectionState;
+
+		if (ctx.params.node.id === masterNodeId && !isElectionAlreadyStarted) {
+			// Elect master
 		} else {
-			this.removeFromCurrentNodeList(disconnectedNode);
+			// Remove Master and wait for new coordinator.
+			this.removeFromCurrentNodeList(ctx.params.node);
 		}
 	}
 }

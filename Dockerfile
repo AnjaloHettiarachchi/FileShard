@@ -15,4 +15,4 @@ ENV NODE_ENV=production
 RUN npm run build && npm prune
 
 # Start server
-CMD ["node", "./node_modules/moleculer/bin/moleculer-runner.js", "--config", "./dist/moleculer.config.js"]
+CMD ["npm", "run", "prod:start"]

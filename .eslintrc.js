@@ -4,7 +4,7 @@ module.exports = {
 		es6: true,
 		node: true
 	},
-	ignorePatterns: [ "test/*"],
+	ignorePatterns: ["test/*"],
 	parser: "@typescript-eslint/parser",
 	parserOptions: {
 		project: "tsconfig.json",
@@ -21,7 +21,7 @@ module.exports = {
 		"@typescript-eslint/explicit-member-accessibility": [
 			"error",
 			{
-				accessibility: "explicit"
+				accessibility: "explici"
 			}
 		],
 		"@typescript-eslint/indent": [
@@ -29,12 +29,12 @@ module.exports = {
 			4,
 			{
 				FunctionDeclaration: {
-					parameters: "first"
+					parameters: "first,
 				},
 				FunctionExpression: {
-					parameters: "first"
-				}
-			}
+					parameters: "first,
+
+
 		],
 		"@typescript-eslint/interface-name-prefix": "off",
 		"@typescript-eslint/member-delimiter-style": [
@@ -85,14 +85,25 @@ module.exports = {
 		"eol-last": "error",
 		eqeqeq: ["error", "smart"],
 		"guard-for-in": "error",
-		"id-blacklist": ["error", "any", "Number", "number", "String", "string", "Boolean", "boolean", "Undefined", "undefined"],
+		"id-blacklist": [
+			"error",
+			"any",
+			"Number",
+			"number",
+			"String",
+			"string",
+			"Boolean",
+			"boolean",
+			"Undefined",
+			"undefined"
+		],
 		"id-match": "error",
 		"import/order": "error",
 		"max-classes-per-file": ["error", 1],
 		"max-len": [
 			"error",
 			{
-				"ignoreUrls": true ,
+				ignoreUrls: true,
 				code: 160
 			}
 		],
@@ -138,6 +149,6 @@ module.exports = {
 		],
 		"spaced-comment": "error",
 		"use-isnan": "error",
-		"valid-typeof": "off",
-	}
+		"valid-typeof": "off"
+	},
 };
