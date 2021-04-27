@@ -10,7 +10,7 @@
     "cli": "moleculer connect NATS --ns=FileShard",
     "ci": "jest --watch",
     "test": "jest --coverage",
-    "lint": "eslint --ext .js,.ts .",
+    "lint": "eslint --ext .ts .",
     "prettify": "prettier --write \"**/*.{ts,js}\"",
     "dc:up": "docker-compose up --build -d",
     "dc:logs": "docker-compose logs -f",

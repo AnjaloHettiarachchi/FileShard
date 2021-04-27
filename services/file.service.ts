@@ -92,7 +92,7 @@ export default class FileService extends Service {
 			ServiceMasterNodeID: currentServiceMasterNode,
 			NodeConfigMasterNodeID: nodeConfigMaster,
 			otherNodes,
-			amIMas,
+			amIMaster,
 		};
 	}
 

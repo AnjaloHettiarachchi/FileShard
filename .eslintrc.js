@@ -2,13 +2,13 @@ module.exports = {
 	env: {
 		browser: true,
 		es6: true,
-		node: true
+		node: true,
 	},
 	ignorePatterns: ["test/*"],
 	parser: "@typescript-eslint/parser",
 	parserOptions: {
 		project: "tsconfig.json",
-		sourceType: "module"
+		sourceType: "module,
 	},
 	plugins: ["prefer-arrow", "import", "@typescript-eslint"],
 	rules: {
@@ -21,7 +21,7 @@ module.exports = {
 		"@typescript-eslint/explicit-member-accessibility": [
 			"error",
 			{
-				accessibility: "explici"
+				accessibility: "explicit"
 			}
 		],
 		"@typescript-eslint/indent": [
@@ -29,12 +29,12 @@ module.exports = {
 			4,
 			{
 				FunctionDeclaration: {
-					parameters: "first,
+					parameters: "first"
 				},
 				FunctionExpression: {
-					parameters: "first,
-
-
+					parameters: "first"
+				}
+			}
 		],
 		"@typescript-eslint/interface-name-prefix": "off",
 		"@typescript-eslint/member-delimiter-style": [
