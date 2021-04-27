@@ -8,7 +8,7 @@ module.exports = {
 	parser: "@typescript-eslint/parser",
 	parserOptions: {
 		project: "tsconfig.json",
-		sourceType: "module,
+		sourceType: "module",
 	},
 	plugins: ["prefer-arrow", "import", "@typescript-eslint"],
 	rules: {
@@ -21,20 +21,20 @@ module.exports = {
 		"@typescript-eslint/explicit-member-accessibility": [
 			"error",
 			{
-				accessibility: "explicit"
-			}
+				accessibility: "explicit",
+			},
 		],
 		"@typescript-eslint/indent": [
 			"off",
 			4,
 			{
 				FunctionDeclaration: {
-					parameters: "first"
+					parameters: "first",
 				},
 				FunctionExpression: {
-					parameters: "first"
-				}
-			}
+					parameters: "first",
+				},
+			},
 		],
 		"@typescript-eslint/interface-name-prefix": "off",
 		"@typescript-eslint/member-delimiter-style": [
@@ -42,13 +42,13 @@ module.exports = {
 			{
 				multiline: {
 					delimiter: "semi",
-					requireLast: true
+					requireLast: true,
 				},
 				singleline: {
 					delimiter: "semi",
-					requireLast: false
-				}
-			}
+					requireLast: false,
+				},
+			},
 		],
 		"@typescript-eslint/member-ordering": "error",
 		"@typescript-eslint/no-empty-function": "error",
@@ -66,8 +66,8 @@ module.exports = {
 			"error",
 			"double",
 			{
-				avoidEscape: true
-			}
+				avoidEscape: true,
+			},
 		],
 		"@typescript-eslint/semi": ["error", "always"],
 		"@typescript-eslint/triple-slash-reference": "error",
@@ -95,7 +95,7 @@ module.exports = {
 			"Boolean",
 			"boolean",
 			"Undefined",
-			"undefined"
+			"undefined",
 		],
 		"id-match": "error",
 		"import/order": "error",
@@ -104,8 +104,8 @@ module.exports = {
 			"error",
 			{
 				ignoreUrls: true,
-				code: 160
-			}
+				code: 160,
+			},
 		],
 		"new-parens": "error",
 		"no-bitwise": "error",
@@ -122,8 +122,8 @@ module.exports = {
 		"no-shadow": [
 			"error",
 			{
-				hoist: "all"
-			}
+				hoist: "all",
+			},
 		],
 		"no-throw-literal": "error",
 		"no-trailing-spaces": "error",
@@ -144,11 +144,11 @@ module.exports = {
 			{
 				anonymous: "never",
 				asyncArrow: "always",
-				named: "never"
-			}
+				named: "never",
+			},
 		],
 		"spaced-comment": "error",
 		"use-isnan": "error",
-		"valid-typeof": "off"
+		"valid-typeof": "off",
 	},
 };
