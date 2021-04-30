@@ -3,11 +3,7 @@ import Moleculer, { Context, Service, ServiceBroker } from "moleculer";
 import { ServiceConfig } from "../utils/configs/service.config";
 import { CACHE_KEYS } from "../constants";
 import { WorkerNode } from "../utils/models/workerNode";
-import {
-	findHigherNodeId,
-	findHighestNodeId,
-	findNodeIdsHigherThanSelf,
-} from "../utils/common";
+import { Bully } from "../utils/election/bully";
 import MoleculerServerError = Moleculer.Errors.MoleculerServerError;
 import MoleculerError = Moleculer.Errors.MoleculerError;
 
@@ -21,13 +17,14 @@ interface NodeItem {
 }
 
 interface EventContext extends Moleculer.Context {
-	params: { node: NodeItem };
+	params: { node: NodeItem; nodeId?: string };
 }
 
 export default class FileService extends Service {
 	private readonly SERVICE_NAME = "file";
-	private readonly workerNode: WorkerNode = null;
-	private readonly serviceConfig: ServiceConfig = null;
+	private readonly workerNode: WorkerNode;
+	private readonly serviceConfig: ServiceConfig;
+	private bully: Bully;
 
 	public constructor(broker: ServiceBroker) {
 		super(broker);
@@ -48,7 +45,11 @@ export default class FileService extends Service {
 					rest: "GET /info",
 					handler: async () => this.ActionGetInfo(),
 				},
-				electionStart: {
+				status: {
+					rest: "GET /status",
+					handler: async () => this.ActionGetStatus(),
+				},
+				election: {
 					rest: "GET /election",
 					handler: async ctx => this.ActionElection(ctx),
 				},
@@ -76,7 +77,6 @@ export default class FileService extends Service {
 	}
 
 	public async ActionGetInfo() {
-		const nodeID = this.broker.nodeID;
 		const serviceName = this.SERVICE_NAME;
 		const serviceMasterNodeId = await this.serviceConfig.get(
 			CACHE_KEYS.SERVICE_CURRENT_MASTER
@@ -84,47 +84,30 @@ export default class FileService extends Service {
 		const nodeDetails = this.workerNode;
 
 		return {
-			nodeID,
 			serviceName,
 			serviceMasterNodeId,
 			nodeDetails,
 		};
 	}
 
-	public async ActionElection(ctx: Context) {
-		const selfId = this.broker.nodeID;
-		if (findHigherNodeId(selfId, ctx.nodeID) === selfId) {
-			await this.startPolling();
-			return { message: "ok" };
-		}
-
-		return { message: "nok" };
-	}
-
-	private async startPolling() {
-		this.workerNode.coordinatorNodeId = "";
-		this.workerNode.selfCoordinatorState = false;
-		this.workerNode.selfElectionState = true;
-
-		const nodeIdsHigherThanSelf = findNodeIdsHigherThanSelf(
-			this.broker.nodeID,
-			this.workerNode.otherWorkerNodeIds
+	public async ActionGetStatus() {
+		const nodeDetails = this.workerNode;
+		const serviceName = this.SERVICE_NAME;
+		const serviceMasterNodeId = await this.serviceConfig.get(
+			CACHE_KEYS.SERVICE_CURRENT_MASTER
 		);
 
-		for (const nodeId of nodeIdsHigherThanSelf) {
-			const allResponses: string[] = [];
-			await this.broker
-				.call("file.election", null, { nodeID: nodeId })
-				.then((res: { message: "ok" | "nok" }) => {
-					allResponses.push(res.message);
-				});
+		return {
+			nodeDetails,
+			serviceDetails: {
+				serviceName,
+				serviceMasterNodeId,
+			},
+		};
+	}
 
-			if (allResponses.indexOf("ok") !== -1) {
-				this.waitForVictoryMsg();
-			} else {
-				await this.appointSelfAsCoordinator(this.broker.nodeID);
-			}
-		}
+	public async ActionElection(ctx: Context) {
+		return this.bully.handleElectionMsg(ctx.nodeID);
 	}
 
 	private async initService() {
@@ -133,7 +116,7 @@ export default class FileService extends Service {
 			await this.initServiceNodeConfig();
 		} catch (e) {
 			throw new MoleculerServerError(
-				"Created function failed. Error: " + e.message
+				"Service initialization failed. Error: " + e.message
 			);
 		}
 	}
@@ -154,6 +137,7 @@ export default class FileService extends Service {
 						CACHE_KEYS.SERVICE_CURRENT_MASTER,
 						this.broker.nodeID
 					);
+					this.metadata.masterNodeId = this.broker.nodeID;
 
 					this.workerNode.coordinatorNodeId = this.broker.nodeID;
 					this.workerNode.selfCoordinatorState = true;
@@ -170,28 +154,8 @@ export default class FileService extends Service {
 		this.addToCurrentNodeList(nodeItem);
 	}
 
-	private addToCurrentNodeList(nodeItem: NodeItem) {
-		const nodeIds = this.workerNode.otherWorkerNodeIds;
-
-		nodeItem.services.forEach(service => {
-			if (
-				service.name === this.SERVICE_NAME &&
-				!nodeIds.includes(nodeItem.id)
-			) {
-				nodeIds.push(nodeItem.id);
-			}
-		});
-	}
-
-	private removeFromCurrentNodeList(nodeItem: NodeItem) {
-		const otherNodes = this.workerNode.otherWorkerNodeIds;
-		if (otherNodes.includes(nodeItem.id)) {
-			otherNodes.splice(otherNodes.indexOf(nodeItem.id), 1);
-		}
-	}
-
 	private async initOtherNodeList() {
-		await this.broker
+		return this.broker
 			.call("$node.list", { withServices: true })
 			.then((res: [NodeItem]) => {
 				res.forEach(item => {
@@ -200,11 +164,18 @@ export default class FileService extends Service {
 			});
 	}
 
-	private async handleElectionVictoryEvent(ctx: EventContext) {
-		this.workerNode.coordinatorNodeId = ctx.nodeID;
-		this.workerNode.selfElectionState = false;
-		this.workerNode.selfCoordinatorState =
-			ctx.nodeID === this.broker.nodeID;
+	private addToCurrentNodeList(nodeItem: NodeItem) {
+		const nodeIds = this.workerNode.otherWorkerNodeIds;
+		const isSameService = nodeItem.services.some(
+			service => service.name === this.SERVICE_NAME
+		);
+		if (!nodeIds.includes(nodeItem.id) && isSameService) {
+			nodeIds.push(nodeItem.id);
+		}
+	}
+
+	private handleElectionVictoryEvent(ctx: EventContext) {
+		this.bully.handleVictoryMsg(ctx.nodeID);
 	}
 
 	private async handleNodeDisconnectEvent(ctx: EventContext) {
@@ -214,51 +185,22 @@ export default class FileService extends Service {
 
 		if (ctx.params.node.id === masterNodeId) {
 			// Disconnected node is the coordinator. Elect new one.
-			const allElectionStates: boolean[] = [];
-			for (const node of this.workerNode.otherWorkerNodeIds) {
-				await this.broker
-					.call("file.info", null, { nodeID: node })
-					.then((res: { nodeDetails: WorkerNode }) => {
-						allElectionStates.push(
-							res.nodeDetails.selfElectionState
-						);
-					});
-			}
-			const isElectionAlreadyStarted =
-				allElectionStates.indexOf(true) !== -1;
-			const selfNodeId = this.broker.nodeID;
-
-			const allNodes = this.workerNode.otherWorkerNodeIds.concat([
-				selfNodeId,
-			]);
-
-			// Elect a new coordinator.
-			if (findHighestNodeId(allNodes) === selfNodeId) {
-				// I'm the new coordinator.
-				await this.appointSelfAsCoordinator(selfNodeId);
-			} else if (isElectionAlreadyStarted) {
-				// Wait for a new coordinator.
-				this.waitForVictoryMsg();
-			} else {
-				await this.startPolling();
-			}
+			this.bully = new Bully(
+				this.SERVICE_NAME,
+				this.broker,
+				this.workerNode
+			);
+			await this.bully.selfStartElection();
 		}
 	}
 
-	private waitForVictoryMsg() {
-		this.workerNode.coordinatorNodeId = "";
-		this.workerNode.selfCoordinatorState = false;
-		this.workerNode.selfElectionState = false;
-	}
-
-	private async appointSelfAsCoordinator(selfNodeId: string) {
-		await this.broker.broadcast(
-			"election.victory",
-			{ nodeId: selfNodeId },
-			this.SERVICE_NAME
-		);
-		this.workerNode.coordinatorNodeId = selfNodeId;
-		this.workerNode.selfCoordinatorState = true;
-		this.workerNode.selfElectionState = false;
+	private removeFromCurrentNodeList(nodeItem: NodeItem) {
+		const otherNodes = this.workerNode.otherWorkerNodeIds;
+		if (otherNodes.includes(nodeItem.id)) {
+			otherNodes.splice(otherNodes.indexOf(nodeItem.id), 1);
+			this.logger.debug(
+				`${nodeItem.id} removed from other node id list.`
+			);
+		}
 	}
 }

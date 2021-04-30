@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/explicit-member-accessibility,no-underscore-dangle */
 export class WorkerNode {
-	private readonly nodeId: string;
+	private readonly _nodeId: string;
 	private _otherWorkerNodeIds: string[];
 	private _selfElectionState: boolean;
 	private _selfCoordinatorState: boolean;
@@ -13,11 +13,15 @@ export class WorkerNode {
 		selfElectionState: boolean = false,
 		selfCoordinatorState: boolean = false
 	) {
-		this.nodeId = nodeId;
+		this._nodeId = nodeId;
 		this._coordinatorNodeId = coordinatorNodeId;
 		this._otherWorkerNodeIds = otherWorkerNodeIds;
 		this._selfElectionState = selfElectionState;
 		this._selfCoordinatorState = selfCoordinatorState;
+	}
+
+	get nodeId(): string {
+		return this._nodeId;
 	}
 
 	get coordinatorNodeId(): string {

@@ -1,3 +1,5 @@
+import { ActionEndpoint, Endpoint } from "moleculer";
+
 const getServiceCacheKey = (serviceName: string, genericCacheKey: string) =>
 	`${serviceName.toUpperCase()}_SERVICE.${genericCacheKey}`;
 
@@ -24,23 +26,7 @@ const findHigherNodeId = (
 const findNodeIdsHigherThanSelf = (
 	selfNodeId: string,
 	otherNodeIds: string[]
-) => {
-	const higherNodeIds: string[] = [];
-
-	try {
-		if (typeof otherNodeIds !== "undefined" && otherNodeIds.length > 0) {
-			otherNodeIds.forEach(otherNodeId => {
-				if (findHigherNodeId(selfNodeId, otherNodeId) !== selfNodeId) {
-					higherNodeIds.push(otherNodeId);
-				}
-			});
-		}
-	} catch (e) {
-		throw new Error(`Finding higher NodeIDs failed. Error: ${e.message}`);
-	}
-
-	return higherNodeIds;
-};
+) => otherNodeIds.filter(nodeId => parseComparableNodeId(nodeId) > parseComparableNodeId(selfNodeId));
 
 const findHighestNodeId = (nodeIds: string[]) => {
 	let highest = nodeIds.shift();
@@ -52,10 +38,20 @@ const findHighestNodeId = (nodeIds: string[]) => {
 	return highest;
 };
 
+const getServiceName = (endpoint: ActionEndpoint): string => endpoint.service.name;
+
+const getMasterEndpoint = (
+	masterNodeId: string,
+	actionEndpoints: ActionEndpoint[]
+): Endpoint => actionEndpoints.find(value => value.id === masterNodeId);
+
 export {
 	getServiceCacheKey,
 	getNodeCacheKey,
+	parseComparableNodeId,
 	findHigherNodeId,
 	findNodeIdsHigherThanSelf,
 	findHighestNodeId,
+	getServiceName,
+	getMasterEndpoint,
 };
