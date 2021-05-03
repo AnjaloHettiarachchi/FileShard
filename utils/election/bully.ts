@@ -1,192 +1,211 @@
-import { ServiceBroker } from "moleculer";
+import { inspect } from "util";
+import Moleculer, { Context } from "moleculer";
 import { WorkerNode } from "../models/workerNode";
-import { findHigherNodeId, parseComparableNodeId } from "../common";
-import { CACHE_KEYS } from "../../constants";
-import { FileShardLogger } from "../logger";
+import { parseComparableNodeId } from "../common";
 import { ServiceConfig } from "../configs/service.config";
+import { CACHE_KEYS } from "../../constants";
 
-interface StatusResponse {
-	nodeDetails: WorkerNode;
+interface NodeInfoResponse {
 	serviceDetails: {
 		serviceName: string;
 		serviceMasterNodeId: string;
 	};
+	nodeDetails: {
+		nodeId: string;
+		coordinatorNodeId: string;
+		selfCoordinatorState: boolean;
+		selfElectionState: "ready" | "running" | "waiting";
+	};
 }
 
-interface ElectionResponse {
-	message: "ok";
+interface BullyMsg {
+	message: "alive" | "election" | "victory" | null;
+	senderNodeId?: string;
+}
+
+interface BullyMsgContext extends Context {
+	params: BullyMsg | Moleculer.GenericObject;
 }
 
 export class Bully {
-	private readonly EVENT_NAME_ELECTION_VICTORY = "election.victory";
-	private readonly ACTION_NAME_FILE_ELECTION = "file.election";
-	private readonly ACTION_NAME_FILE_STATUS = "file.status";
-	private readonly serviceBroker: ServiceBroker;
 	private readonly selfNode: WorkerNode;
-
-	private readonly loggerService: FileShardLogger;
 	private readonly serviceConfig: ServiceConfig;
 
-	public constructor(
-		serviceName: string,
-		serviceBroker: ServiceBroker,
-		selfNode: WorkerNode
-	) {
-		this.serviceBroker = serviceBroker;
+	public constructor(selfNode: WorkerNode, serviceConfig: ServiceConfig) {
 		this.selfNode = selfNode;
-		this.loggerService = new FileShardLogger(
-			"info",
-			serviceBroker.logger,
-			"BULLY"
-		);
-		this.serviceConfig = new ServiceConfig(
-			serviceName,
-			serviceBroker.cacher
-		);
+		this.serviceConfig = serviceConfig;
 	}
 
-	public selfStartElection(): Promise<void> {
-		this.loggerService.log("Trying to start election on my own...");
-		if (this.checkIfSelfHighest()) {
-			this.loggerService.log(
-				"I'm the highest node alive. Appoint myself as coordinator..."
+	public async startElectionProcess() {
+		this.selfNode.serviceBroker.logger.info(
+			`selfNode: ${inspect(this.selfNode)}`
+		);
+		const isAnyElectionAlreadyStarted = await this.getIsAnyElectionAlreadyStarted();
+		if (
+			!isAnyElectionAlreadyStarted &&
+			this.selfNode.coordinatorNodeId === ""
+		) {
+			this.prepareNodeConfigForElection();
+			const isSelfHighestNode = await this.getIsSelfHighestNode();
+			if (isSelfHighestNode) {
+				return await this.appointSelfAsCoordinator();
+			}
+
+			const responses = await this.sendElectionMsgToHigherNodes();
+			const isAnyAlive = responses.some(
+				response => response.message === "alive"
 			);
-			return this.appointSelfAsCoordinator();
+
+			if (isAnyAlive && this.selfNode.coordinatorNodeId === "") {
+				this.selfNode.serviceBroker.logger.info(
+					"Waiting for Victory ..."
+				);
+				return this.waitForVictoryMsg();
+			}
+
+			return await this.appointSelfAsCoordinator();
 		}
 
-		this.loggerService.log(
-			"I'm not the highest node. Trying to broadcast election msg..."
-		);
-		return this.broadcastElectionMsgToHigherNodes();
+		return this.waitForVictoryMsg();
 	}
 
-	public async handleElectionMsg(
-		senderNodeId: string
-	): Promise<ElectionResponse | null> {
+	public async handleElectionMsg(ctx: BullyMsgContext) {
+		const senderNodeId = ctx.params.senderNodeId;
 		const selfNodeId = this.selfNode.nodeId;
-		this.loggerService.log(
-			`Received an election msg from ${senderNodeId}. Trying to handle...`
-		);
-
-		if (findHigherNodeId(selfNodeId, senderNodeId) === selfNodeId) {
-			this.loggerService.log(
-				`My ID ${selfNodeId} higher than election msg sender's ID ${senderNodeId}. Send ack and trying to start election on my own...`
-			);
-			await this.selfStartElection();
-			return { message: "ok" };
+		if (
+			parseComparableNodeId(senderNodeId) <
+			parseComparableNodeId(selfNodeId)
+		) {
+			// Start election of my own
+			await this.startElectionProcess();
+			return {
+				message: "alive",
+				senderNodeId: this.selfNode.nodeId,
+			} as BullyMsg;
 		}
-
-		this.loggerService.log(
-			`My ID ${selfNodeId} lower than election msg sender's ID ${senderNodeId}. Send nothing back...`
-		);
-		return null;
 	}
 
-	public handleVictoryMsg(senderNodeId: string): void {
-		this.loggerService.log(
-			`Received a Victory msg from ${senderNodeId}. Saving sender as my coordinator...`
-		);
-		this.selfNode.selfElectionState = false;
-		this.selfNode.coordinatorNodeId = senderNodeId;
-		this.selfNode.selfCoordinatorState =
-			senderNodeId === this.selfNode.nodeId;
+	public handleVictoryMsg(ctx: BullyMsgContext) {
+		if (ctx.nodeID !== this.selfNode.nodeId) {
+			this.selfNode.serviceBroker.logger.info(
+				`Received Victory from ${ctx.nodeID} node...`
+			);
+			this.updateSelfConfigWithNewCoordinator(ctx.nodeID, false);
+		}
 	}
 
-	private checkIfSelfHighest(): boolean {
-		const nodeIdList = this.selfNode.otherWorkerNodeIds;
-		const selfNodeId = this.selfNode.nodeId;
-
-		return nodeIdList.every(
-			nodeId =>
-				parseComparableNodeId(selfNodeId) >
-				parseComparableNodeId(nodeId)
+	private prepareNodeConfigForElection() {
+		this.selfNode.serviceBroker.logger.info(
+			`Node ${this.selfNode.nodeId} started election...`
 		);
-	}
-
-	private waitForVictory(): void {
-		this.loggerService.log("Waiting for a Victory msg...");
 		this.selfNode.coordinatorNodeId = "";
 		this.selfNode.selfCoordinatorState = false;
-		this.selfNode.selfElectionState = false;
+		this.selfNode.selfElectionState = "running";
 	}
 
-	private isAnyOngoingElection(): boolean {
-		const nodeIdList = this.selfNode.otherWorkerNodeIds;
-
-		this.loggerService.log("Checking if there is any ongoing election...");
-		return !nodeIdList.every(async nodeId => {
-			const resp: StatusResponse = await this.serviceBroker.call(
-				this.ACTION_NAME_FILE_STATUS,
+	private async getIsAnyElectionAlreadyStarted(): Promise<boolean> {
+		const promises = [];
+		const otherNodeIds = await this.selfNode.getOtherNodeIds();
+		for (const nodeId of otherNodeIds) {
+			const res: Promise<NodeInfoResponse> = this.selfNode.serviceBroker.call(
+				"file.node.info",
 				null,
 				{
 					nodeID: nodeId,
 				}
 			);
-			return resp.nodeDetails.selfElectionState === false;
-		});
-	}
-
-	private async appointSelfAsCoordinator(): Promise<void> {
-		this.loggerService.log("Appoint myself as the coordinator...");
-		this.selfNode.coordinatorNodeId = this.selfNode.nodeId;
-		this.selfNode.selfCoordinatorState = true;
-		this.selfNode.selfElectionState = false;
-
-		await this.serviceConfig.set(
-			CACHE_KEYS.SERVICE_CURRENT_MASTER,
-			this.selfNode.nodeId
-		);
-		await this.serviceBroker.broadcast(this.EVENT_NAME_ELECTION_VICTORY);
-	}
-
-	private async broadcastElectionMsgToHigherNodes(): Promise<void> {
-		this.loggerService.log("Trying to broadcast Election msg...");
-		if (!this.isAnyOngoingElection()) {
-			this.loggerService.log(
-				"There is no ongoing election. Proceed with sending Election msg..."
-			);
-			this.selfNode.coordinatorNodeId = "";
-			this.selfNode.selfCoordinatorState = false;
-			this.selfNode.selfElectionState = true;
-
-			const nodeIdList = this.selfNode.otherWorkerNodeIds;
-			const selfNodeId = this.selfNode.nodeId;
-
-			const nodeIdsHigherThanSelf = nodeIdList.filter(
-				nodeId =>
-					parseComparableNodeId(nodeId) >
-					parseComparableNodeId(selfNodeId)
-			);
-
-			const noHigherNodeResponded = nodeIdsHigherThanSelf.every(
-				async nodeId => {
-					const res: ElectionResponse | null = await this.serviceBroker.call(
-						this.ACTION_NAME_FILE_ELECTION,
-						null,
-						{
-							nodeID: nodeId,
-						}
-					);
-					return res === null;
-				}
-			);
-
-			if (noHigherNodeResponded) {
-				this.loggerService.log(
-					"No higher node responded for Election msg. Trying to appointing self as coordinator..."
-				);
-				return this.appointSelfAsCoordinator();
-			}
-
-			this.loggerService.log(
-				"At least one higher node responded to Election msg. Stop election and waiting..."
-			);
-			return this.waitForVictory();
+			promises.push(res);
 		}
 
-		this.loggerService.log(
-			"There is an ongoing election. Stop proceeding with sending Election msg..."
+		const nodeInfoList = await Promise.all(promises);
+		return nodeInfoList.some(
+			node => node.nodeDetails.selfElectionState === "running"
 		);
-		return this.waitForVictory();
+	}
+
+	private waitForVictoryMsg() {
+		this.selfNode.coordinatorNodeId = "";
+		this.selfNode.selfElectionState = "waiting";
+		this.selfNode.selfCoordinatorState = false;
+	}
+
+	private async appointSelfAsCoordinator() {
+		const promises = [];
+		promises.push(this.broadcastVictoryMsg());
+		promises.push(
+			this.updateServiceConfigForNewCoordinator(this.selfNode.nodeId)
+		);
+		this.updateSelfConfigWithNewCoordinator(this.selfNode.nodeId, true);
+		await Promise.all(promises);
+	}
+
+	private updateSelfConfigWithNewCoordinator(
+		nodeId: string,
+		isSelf: boolean
+	) {
+		this.selfNode.serviceBroker.logger.info(
+			`selfConfig >>> nodeId: ${nodeId}`
+		);
+		this.selfNode.coordinatorNodeId = nodeId;
+		this.selfNode.selfElectionState = "ready";
+		this.selfNode.selfCoordinatorState = isSelf;
+	}
+
+	private async updateServiceConfigForNewCoordinator(coordinatorId: string) {
+		return this.serviceConfig.set(
+			CACHE_KEYS.SERVICE_CURRENT_MASTER,
+			coordinatorId
+		);
+	}
+
+	private async sendElectionMsgToHigherNodes(): Promise<BullyMsg[]> {
+		const promises = [];
+		const higherNodeIds = await this.getHigherNodeIdsThanSelf();
+		for (const nodeId of higherNodeIds) {
+			const res = this.sendElectionMsg(nodeId);
+			promises.push(res);
+		}
+
+		return await Promise.all(promises);
+	}
+
+	private async broadcastVictoryMsg() {
+		return await this.selfNode.serviceBroker.broadcast(
+			"bully.victory",
+			{
+				message: "victory",
+				senderNodeId: this.selfNode.nodeId,
+			} as BullyMsg,
+			this.selfNode.serviceName
+		);
+	}
+
+	private async sendElectionMsg(nodeId: string): Promise<BullyMsg> {
+		return await this.selfNode.serviceBroker.call(
+			"file.bully.election",
+			{
+				message: "election",
+				senderNodeId: this.selfNode.nodeId,
+			} as BullyMsg,
+			{ nodeID: nodeId, fallbackResponse: { message: null } }
+		);
+	}
+
+	private async getHigherNodeIdsThanSelf(): Promise<string[]> {
+		const otherNodeIds = await this.selfNode.getOtherNodeIds();
+		return otherNodeIds.filter(
+			nodeId =>
+				parseComparableNodeId(nodeId) >
+				parseComparableNodeId(this.selfNode.nodeId)
+		);
+	}
+
+	private async getIsSelfHighestNode(): Promise<boolean> {
+		const otherNodeIds = await this.selfNode.getOtherNodeIds();
+		return otherNodeIds.every(
+			nodeId =>
+				parseComparableNodeId(nodeId) <
+				parseComparableNodeId(this.selfNode.nodeId)
+		);
 	}
 }

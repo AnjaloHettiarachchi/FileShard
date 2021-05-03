@@ -75,15 +75,15 @@ module.exports = {
 		"@typescript-eslint/unified-signatures": "error",
 		"arrow-body-style": "error",
 		"arrow-parens": ["error", "as-needed"],
-		camelcase: "error",
+		"camelcase": "error",
 		"capitalized-comments": "error",
 		"comma-dangle": ["error", "always-multiline"],
-		complexity: "off",
+		"complexity": "off",
 		"constructor-super": "error",
-		curly: "error",
+		"curly": "error",
 		"dot-notation": "error",
 		"eol-last": "error",
-		eqeqeq: ["error", "smart"],
+		"eqeqeq": ["error", "smart"],
 		"guard-for-in": "error",
 		"id-blacklist": [
 			"error",
@@ -138,7 +138,7 @@ module.exports = {
 		"prefer-arrow/prefer-arrow-functions": "error",
 		"prefer-const": "error",
 		"quote-props": ["error", "consistent-as-needed"],
-		radix: "error",
+		"radix": "error",
 		"space-before-function-paren": [
 			"error",
 			{
