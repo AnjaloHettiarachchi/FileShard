@@ -1,6 +1,7 @@
 "use strict";
 import { hostname } from "os";
 import { BrokerOptions, Errors, MetricRegistry } from "moleculer";
+import { MasterStrategy } from "./utils/strategies/master.strategy";
 
 /**
  * Moleculer ServiceBroker configuration file
@@ -116,7 +117,7 @@ const brokerConfig: BrokerOptions = {
 	registry: {
 		// Define balancing strategy. More info: https://moleculer.services/docs/0.14/balancing.html
 		// Available values: "RoundRobin", "Random", "CpuUsage", "Latency", "Shard"
-		strategy: "RoundRobin",
+		strategy: MasterStrategy,
 		// Enable local action call preferring. Always call the local action instance if available.
 		preferLocal: true,
 	},
