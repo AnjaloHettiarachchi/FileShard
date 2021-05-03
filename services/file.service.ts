@@ -3,8 +3,22 @@ import Moleculer, { Service, ServiceBroker } from "moleculer";
 import { ServiceConfig } from "../utils/configs/service.config";
 import { CACHE_KEYS } from "../constants";
 import { WorkerNode } from "../utils/models/workerNode";
+import { Bully } from "../utils/election/bully";
 import MoleculerServerError = Moleculer.Errors.MoleculerServerError;
 import MoleculerError = Moleculer.Errors.MoleculerError;
+
+interface NodeInfoResponse {
+	serviceDetails: {
+		serviceName: string;
+		serviceMasterNodeId: string;
+	};
+	nodeDetails: {
+		nodeId: string;
+		coordinatorNodeId: string;
+		selfCoordinatorState: boolean;
+		selfElectionState: "ready" | "running" | "waiting";
+	};
+}
 
 interface NodeItem {
 	id: string;
@@ -21,46 +35,47 @@ interface EventContext extends Moleculer.Context {
 
 export default class FileService extends Service {
 	private readonly SERVICE_NAME = "file";
-	private readonly workerNode: WorkerNode = null;
-	private readonly serviceConfig: ServiceConfig = null;
+	private readonly workerNode: WorkerNode;
+	private readonly serviceConfig: ServiceConfig;
+	private readonly bully: Bully;
 
 	public constructor(broker: ServiceBroker) {
 		super(broker);
-		this.workerNode = new WorkerNode(this.broker.nodeID);
+		this.workerNode = new WorkerNode(
+			this.broker.nodeID,
+			this.SERVICE_NAME,
+			this.broker
+		);
 		this.serviceConfig = new ServiceConfig(
 			this.SERVICE_NAME,
 			this.broker.cacher
 		);
+		this.bully = new Bully(this.workerNode, this.serviceConfig);
 
 		this.parseServiceSchema({
 			name: this.SERVICE_NAME,
 			actions: {
-				hello: {
-					rest: "GET /",
+				"hello": {
+					rest: "GET /hello",
 					async handler(): Promise<string> {
 						return this.ActionHello();
 					},
 				},
-				info: {
-					rest: "GET /info",
+				"node.info": {
+					rest: "GET /node/info",
 					async handler() {
-						return this.ActionGetInfo();
+						return this.ActionNodeInfo();
 					},
+				},
+				"bully.election": {
+					rest: "GET /bully/election",
+					handler: async ctx => this.ActionBullyElection(ctx),
 				},
 			},
 			dependencies: ["$node"],
 			events: {
-				"$node.connected"(ctx: { params: { node: NodeItem } }) {
-					this.handleNodeConnectedEvent(ctx.params.node);
-				},
 				"$node.disconnected"(ctx: EventContext) {
 					this.handleNodeDisconnectEvent(ctx);
-				},
-				"bully.election"(ctx: EventContext) {
-					this.handleBullyElectionEvent(ctx);
-				},
-				"bully.alive"(ctx: EventContext) {
-					this.handleBullyAliveEvent(ctx);
 				},
 				"bully.victory"(ctx: EventContext) {
 					this.handleBullyVictoryEvent(ctx);
@@ -76,126 +91,75 @@ export default class FileService extends Service {
 		return `Hello from ${this.broker.nodeID}`;
 	}
 
-	public async ActionGetInfo() {
-		const myNodeID = this.broker.nodeID;
-		const serviceName = this.SERVICE_NAME;
-		const currentServiceMasterNode = await this.serviceConfig.get(
+	public async ActionNodeInfo() {
+		const serviceMasterNodeId = await this.serviceConfig.get(
 			CACHE_KEYS.SERVICE_CURRENT_MASTER
 		);
-		const nodeConfigMaster = this.workerNode.coordinatorNodeId;
-		const otherNodes = this.workerNode.otherWorkerNodeIds;
-		const amIMaster = this.workerNode.selfCoordinatorState;
-
+		const otherNodeIds = await this.workerNode.getOtherNodeIds();
 		return {
-			NodeID: myNodeID,
-			ServiceName: serviceName,
-			ServiceMasterNodeID: currentServiceMasterNode,
-			NodeConfigMasterNodeID: nodeConfigMaster,
-			otherNodes,
-			amIMaster,
-		};
+			serviceDetails: {
+				serviceName: this.SERVICE_NAME,
+				serviceMasterNodeId,
+			},
+			nodeDetails: {
+				nodeId: this.workerNode.nodeId,
+				selfElectionState: this.workerNode.selfElectionState,
+				coordinatorNodeId: this.workerNode.coordinatorNodeId,
+				selfCoordinatorState: this.workerNode.selfCoordinatorState,
+				otherNodeIds,
+			},
+		} as NodeInfoResponse;
+	}
+
+	public async ActionBullyElection(ctx: EventContext) {
+		return await this.bully.handleElectionMsg(ctx);
+	}
+
+	public async handleBullyVictoryEvent(ctx: EventContext) {
+		return this.bully.handleVictoryMsg(ctx);
 	}
 
 	private async initService() {
 		try {
-			await this.initOtherNodeList();
-			await this.initServiceNodeConfig();
+			await this.serviceConfig
+				.get(CACHE_KEYS.SERVICE_CURRENT_MASTER)
+				.then(async res => {
+					if (types.isNativeError(res)) {
+						throw new MoleculerError(
+							"Error occurred while getting Master Node from ServiceConfig."
+						);
+					}
+
+					// Service doesn't have elected a Master yet.
+					if (res === null) {
+						await this.serviceConfig.set(
+							CACHE_KEYS.SERVICE_CURRENT_MASTER,
+							this.broker.nodeID
+						);
+
+						this.workerNode.coordinatorNodeId = this.broker.nodeID;
+						this.workerNode.selfCoordinatorState = true;
+						//	Service already have a Master.
+					} else {
+						this.workerNode.coordinatorNodeId = res as string;
+						this.workerNode.selfCoordinatorState =
+							res === this.broker.nodeID;
+					}
+				});
 		} catch (e) {
 			throw new MoleculerServerError(
-				"Created function failed. Error: " + e.message
+				"Node started lifecycle function failed. Error: " + e.message
 			);
 		}
 	}
 
-	private async initServiceNodeConfig() {
-		await this.serviceConfig
-			.get(CACHE_KEYS.SERVICE_CURRENT_MASTER)
-			.then(async res => {
-				if (types.isNativeError(res)) {
-					throw new MoleculerError(
-						"Error occurred while getting Master Node from ServiceConfig."
-					);
-				}
+	private async handleNodeDisconnectEvent(ctx: EventContext): Promise<void> {
+		const disconnectedNodeId = ctx.params.node.id;
 
-				// Service doesn't have elected a Master yet.
-				if (res === null) {
-					await this.serviceConfig.set(
-						CACHE_KEYS.SERVICE_CURRENT_MASTER,
-						this.broker.nodeID
-					);
-
-					this.workerNode.coordinatorNodeId = this.broker.nodeID;
-					this.workerNode.selfCoordinatorState = true;
-					//	Service already have a Master.
-				} else {
-					this.workerNode.coordinatorNodeId = res as string;
-					this.workerNode.selfCoordinatorState =
-						res === this.broker.nodeID;
-				}
-			});
-	}
-
-	private handleNodeConnectedEvent(nodeItem: NodeItem): void {
-		this.addToCurrentNodeList(nodeItem);
-	}
-
-	private addToCurrentNodeList(nodeItem: NodeItem) {
-		const nodeIds = this.workerNode.otherWorkerNodeIds;
-
-		nodeItem.services.forEach(service => {
-			if (
-				service.name === this.SERVICE_NAME &&
-				!(nodeIds && nodeIds.includes(nodeItem.id))
-			) {
-				nodeIds.push(nodeItem.id);
-			}
-		});
-	}
-
-	private removeFromCurrentNodeList(nodeItem: NodeItem) {
-		const otherNodes = this.workerNode.otherWorkerNodeIds;
-
-		nodeItem.services.forEach(service => {
-			if (
-				service.name === this.SERVICE_NAME &&
-				!(otherNodes && otherNodes.includes(nodeItem.id))
-			) {
-				otherNodes.splice(otherNodes.indexOf(nodeItem.id));
-			}
-		});
-	}
-
-	private async initOtherNodeList() {
-		await this.broker
-			.call("$node.list", { withServices: true })
-			.then((res: [NodeItem]) => {
-				res.forEach(item => {
-					this.addToCurrentNodeList(item);
-				});
-			});
-	}
-
-	private async handleBullyElectionEvent(ctx: EventContext) {
-		//
-	}
-
-	private async handleBullyAliveEvent(ctx: EventContext) {
-		//
-	}
-
-	private async handleBullyVictoryEvent(ctx: EventContext) {
-		//
-	}
-
-	private async handleNodeDisconnectEvent(ctx: EventContext) {
-		const masterNodeId = this.workerNode.coordinatorNodeId;
-		const isElectionAlreadyStarted = this.workerNode.selfElectionState;
-
-		if (ctx.params.node.id === masterNodeId && !isElectionAlreadyStarted) {
-			// Elect master
-		} else {
-			// Remove Master and wait for new coordinator.
-			this.removeFromCurrentNodeList(ctx.params.node);
+		if (disconnectedNodeId === this.workerNode.coordinatorNodeId) {
+			// Disconnected node is the Coordinator. Elect a new one...
+			this.workerNode.coordinatorNodeId = "";
+			await this.bully.startElectionProcess();
 		}
 	}
 }

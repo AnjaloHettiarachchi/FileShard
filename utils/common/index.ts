@@ -4,4 +4,7 @@ const getServiceCacheKey = (serviceName: string, genericCacheKey: string) =>
 const getNodeCacheKey = (nodeId: string, genericCacheKey: string) =>
 	`${nodeId.toUpperCase()}.${genericCacheKey}`;
 
-export { getServiceCacheKey, getNodeCacheKey };
+const parseComparableNodeId = (fullNodeId: string): bigint =>
+	BigInt(fullNodeId.split("-", 2)[1]);
+
+export { getServiceCacheKey, getNodeCacheKey, parseComparableNodeId };
