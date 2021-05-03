@@ -1,5 +1,17 @@
-export const CACHE_KEYS = {
+const CACHE_KEYS = {
 	SERVICE_CURRENT_MASTER: "CURRENT_MASTER_NODE",
 	NODE_CURRENT_MASTER: "MY_CURRENT_MASTER",
 	NODE_AM_I_MASTER: "AM_I_MASTER",
 };
+
+const ACTION_NAMES = {
+	FILE_NODE_INFO: "file.node.info",
+	FILE_BULLY_ELECTION: "file.bully.election",
+	INTERNAL_NODE_LIST: "$node.list",
+};
+
+const EVENT_NAMES = {
+	BULLY_VICTORY: "bully.victory",
+};
+
+export { CACHE_KEYS, ACTION_NAMES, EVENT_NAMES };

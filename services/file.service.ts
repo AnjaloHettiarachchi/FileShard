@@ -4,34 +4,10 @@ import { ServiceConfig } from "../utils/configs/service.config";
 import { CACHE_KEYS } from "../constants";
 import { WorkerNode } from "../utils/models/workerNode";
 import { Bully } from "../utils/election/bully";
+import { NodeInfoResponse } from "../utils/interfaces/nodeInfoResponse.interface";
+import { EventContext } from "../utils/interfaces/eventContext.interface";
 import MoleculerServerError = Moleculer.Errors.MoleculerServerError;
 import MoleculerError = Moleculer.Errors.MoleculerError;
-
-interface NodeInfoResponse {
-	serviceDetails: {
-		serviceName: string;
-		serviceMasterNodeId: string;
-	};
-	nodeDetails: {
-		nodeId: string;
-		coordinatorNodeId: string;
-		selfCoordinatorState: boolean;
-		selfElectionState: "ready" | "running" | "waiting";
-	};
-}
-
-interface NodeItem {
-	id: string;
-	services?: [
-		{
-			name: string;
-		}
-	];
-}
-
-interface EventContext extends Moleculer.Context {
-	params: { node: NodeItem };
-}
 
 export default class FileService extends Service {
 	private readonly SERVICE_NAME = "file";

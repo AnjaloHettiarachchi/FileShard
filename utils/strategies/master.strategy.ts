@@ -1,4 +1,6 @@
 import Moleculer, { ActionEndpoint, Strategies } from "moleculer";
+import { ServiceConfig } from "../configs/service.config";
+import { CACHE_KEYS } from "../../constants";
 
 const BaseStrategy = Strategies.Base;
 
@@ -7,13 +9,15 @@ export class MasterStrategy extends BaseStrategy {
 		list: ActionEndpoint[],
 		ctx?: Moleculer.Context
 	): Moleculer.Endpoint {
-		return list.find(nodeEndpoint => {
-			ctx.broker.logger.info(
-				`Master NodeID: ${nodeEndpoint.service.metadata.masterNodeId}`
+		return list.find(async nodeEndpoint => {
+			const serviceConfig = new ServiceConfig(
+				nodeEndpoint.service.name,
+				nodeEndpoint.broker.cacher
 			);
-			return (
-				nodeEndpoint.id === nodeEndpoint.service.metadata.masterNodeId
+			const masterNodeId = await serviceConfig.get(
+				CACHE_KEYS.SERVICE_CURRENT_MASTER
 			);
+			return nodeEndpoint.id === masterNodeId;
 		});
 	}
 }

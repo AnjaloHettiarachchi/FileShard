@@ -1,31 +1,10 @@
-import { inspect } from "util";
-import Moleculer, { Context } from "moleculer";
 import { WorkerNode } from "../models/workerNode";
 import { parseComparableNodeId } from "../common";
 import { ServiceConfig } from "../configs/service.config";
-import { CACHE_KEYS } from "../../constants";
-
-interface NodeInfoResponse {
-	serviceDetails: {
-		serviceName: string;
-		serviceMasterNodeId: string;
-	};
-	nodeDetails: {
-		nodeId: string;
-		coordinatorNodeId: string;
-		selfCoordinatorState: boolean;
-		selfElectionState: "ready" | "running" | "waiting";
-	};
-}
-
-interface BullyMsg {
-	message: "alive" | "election" | "victory" | null;
-	senderNodeId?: string;
-}
-
-interface BullyMsgContext extends Context {
-	params: BullyMsg | Moleculer.GenericObject;
-}
+import { ACTION_NAMES, CACHE_KEYS, EVENT_NAMES } from "../../constants";
+import { NodeInfoResponse } from "../interfaces/nodeInfoResponse.interface";
+import { BullyMsg } from "../interfaces/bullyMsg.interface";
+import { BullyMsgContext } from "../interfaces/bullyMsgContext.interface";
 
 export class Bully {
 	private readonly selfNode: WorkerNode;
@@ -37,9 +16,6 @@ export class Bully {
 	}
 
 	public async startElectionProcess() {
-		this.selfNode.serviceBroker.logger.info(
-			`selfNode: ${inspect(this.selfNode)}`
-		);
 		const isAnyElectionAlreadyStarted = await this.getIsAnyElectionAlreadyStarted();
 		if (
 			!isAnyElectionAlreadyStarted &&
@@ -56,17 +32,10 @@ export class Bully {
 				response => response.message === "alive"
 			);
 
-			if (isAnyAlive && this.selfNode.coordinatorNodeId === "") {
-				this.selfNode.serviceBroker.logger.info(
-					"Waiting for Victory ..."
-				);
-				return this.waitForVictoryMsg();
+			if (!isAnyAlive) {
+				return await this.appointSelfAsCoordinator();
 			}
-
-			return await this.appointSelfAsCoordinator();
 		}
-
-		return this.waitForVictoryMsg();
 	}
 
 	public async handleElectionMsg(ctx: BullyMsgContext) {
@@ -87,7 +56,7 @@ export class Bully {
 
 	public handleVictoryMsg(ctx: BullyMsgContext) {
 		if (ctx.nodeID !== this.selfNode.nodeId) {
-			this.selfNode.serviceBroker.logger.info(
+			this.selfNode.serviceBroker.logger.debug(
 				`Received Victory from ${ctx.nodeID} node...`
 			);
 			this.updateSelfConfigWithNewCoordinator(ctx.nodeID, false);
@@ -95,7 +64,7 @@ export class Bully {
 	}
 
 	private prepareNodeConfigForElection() {
-		this.selfNode.serviceBroker.logger.info(
+		this.selfNode.serviceBroker.logger.debug(
 			`Node ${this.selfNode.nodeId} started election...`
 		);
 		this.selfNode.coordinatorNodeId = "";
@@ -108,7 +77,7 @@ export class Bully {
 		const otherNodeIds = await this.selfNode.getOtherNodeIds();
 		for (const nodeId of otherNodeIds) {
 			const res: Promise<NodeInfoResponse> = this.selfNode.serviceBroker.call(
-				"file.node.info",
+				ACTION_NAMES.FILE_NODE_INFO,
 				null,
 				{
 					nodeID: nodeId,
@@ -121,12 +90,6 @@ export class Bully {
 		return nodeInfoList.some(
 			node => node.nodeDetails.selfElectionState === "running"
 		);
-	}
-
-	private waitForVictoryMsg() {
-		this.selfNode.coordinatorNodeId = "";
-		this.selfNode.selfElectionState = "waiting";
-		this.selfNode.selfCoordinatorState = false;
 	}
 
 	private async appointSelfAsCoordinator() {
@@ -143,7 +106,7 @@ export class Bully {
 		nodeId: string,
 		isSelf: boolean
 	) {
-		this.selfNode.serviceBroker.logger.info(
+		this.selfNode.serviceBroker.logger.debug(
 			`selfConfig >>> nodeId: ${nodeId}`
 		);
 		this.selfNode.coordinatorNodeId = nodeId;
@@ -171,7 +134,7 @@ export class Bully {
 
 	private async broadcastVictoryMsg() {
 		return await this.selfNode.serviceBroker.broadcast(
-			"bully.victory",
+			EVENT_NAMES.BULLY_VICTORY,
 			{
 				message: "victory",
 				senderNodeId: this.selfNode.nodeId,
@@ -182,7 +145,7 @@ export class Bully {
 
 	private async sendElectionMsg(nodeId: string): Promise<BullyMsg> {
 		return await this.selfNode.serviceBroker.call(
-			"file.bully.election",
+			ACTION_NAMES.FILE_BULLY_ELECTION,
 			{
 				message: "election",
 				senderNodeId: this.selfNode.nodeId,

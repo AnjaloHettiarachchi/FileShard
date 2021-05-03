@@ -1,14 +1,7 @@
 /* eslint-disable @typescript-eslint/explicit-member-accessibility,no-underscore-dangle */
 import Moleculer, { ServiceBroker } from "moleculer";
-
-interface NodeItem {
-	id: string;
-	services?: [
-		{
-			name: string;
-		}
-	];
-}
+import { NodeItem } from "../interfaces/nodeItem.interface";
+import { ACTION_NAMES } from "../../constants";
 
 export class WorkerNode {
 	private readonly _nodeId: string;
@@ -73,7 +66,7 @@ export class WorkerNode {
 	public async getOtherNodeIds(): Promise<string[]> {
 		const nodeIds = Array<string>();
 		const nodeList: NodeItem[] = await this._serviceBroker.call(
-			"$node.list",
+			ACTION_NAMES.INTERNAL_NODE_LIST,
 			{
 				withServices: true,
 				onlyAvailable: true,
