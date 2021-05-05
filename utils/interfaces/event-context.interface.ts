@@ -4,6 +4,8 @@ import { NodeItem } from "./node-item.interface";
 export interface EventContext extends Moleculer.Context {
 	meta: {
 		filename: string;
+		fileDocId: string;
+		fileChunkId: string;
 	};
 	params: {
 		node: NodeItem;

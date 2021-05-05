@@ -50,20 +50,14 @@ export default class Connection
 		};
 	}
 
-	public connectToMasterDb() {
-		const uri = `${process.env.MONGO_URI}_master`;
+	public connect() {
 		// eslint-disable-next-line @typescript-eslint/no-var-requires
 		const MongoDBAdapter = require("moleculer-db-adapter-mongo");
-		this.schema.adapter = new MongoDBAdapter(uri);
+		this.schema.adapter = new MongoDBAdapter(process.env.MONGO_URI, {
+			useNewUrlParser: true,
+			useUnifiedTopology: true,
+		});
 		this.schema.collection = this.collection;
-		return this.schema;
-	}
-
-	public changeConnection(nodeId: string) {
-		const uri = `${process.env.MONGO_URI}_${nodeId}`;
-		// eslint-disable-next-line @typescript-eslint/no-var-requires
-		const MongoDBAdapter = require("moleculer-db-adapter-mongo");
-		this.schema.adapter = new MongoDBAdapter(uri);
 		return this.schema;
 	}
 

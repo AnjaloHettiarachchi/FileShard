@@ -11,6 +11,8 @@ import MoleculerServerError = Moleculer.Errors.MoleculerServerError;
 
 export default class FileService extends Service {
 	private readonly SERVICE_NAME = "file";
+	private readonly COLLECTION_NAME = "files";
+
 	private readonly workerNode: WorkerNode;
 	private readonly serviceConfig: ServiceConfig;
 	private readonly fileHandler: FileHandler;
@@ -18,7 +20,7 @@ export default class FileService extends Service {
 
 	public constructor(broker: ServiceBroker) {
 		super(broker);
-		const DBMixin = new DBConnection(this.SERVICE_NAME).connectToMasterDb();
+		const DBMixin = new DBConnection(this.COLLECTION_NAME).connect();
 
 		this.workerNode = new WorkerNode(
 			this.broker.nodeID,
@@ -32,6 +34,7 @@ export default class FileService extends Service {
 		this.bully = new Bully(this.workerNode, this.serviceConfig);
 		this.fileHandler = new FileHandler(this.workerNode, this.broker);
 
+		// @ts-ignore
 		this.parseServiceSchema({
 			name: this.SERVICE_NAME,
 			mixins: [DBMixin],
@@ -42,20 +45,6 @@ export default class FileService extends Service {
 				},
 				"upload": {
 					handler: async ctx => await this.ActionUpload(ctx),
-					hooks: {
-						after: async (ctx, resp: FileReceiveResponse) => {
-							if (resp.success && resp.file) {
-								const fileObject = await this.broker.call(
-									"file.create",
-									resp.file
-								);
-
-								return { success: true, file: fileObject };
-							}
-
-							return resp;
-						},
-					},
 				},
 				"chunk.retrieve": {
 					rest: "GET /chunk/retrieve",
@@ -117,6 +106,25 @@ export default class FileService extends Service {
 								e.message
 						);
 					}
+				},
+			},
+			hooks: {
+				before: {
+					create: [
+						// @ts-ignore
+						ctx => {
+							ctx.params.createdAt = Date.now();
+							ctx.params.updatedAt = Date.now();
+							return ctx;
+						},
+					],
+					update: [
+						// @ts-ignore
+						ctx => {
+							ctx.params.updatedAt = Date.now();
+							return ctx;
+						},
+					],
 				},
 			},
 			started: async () => {

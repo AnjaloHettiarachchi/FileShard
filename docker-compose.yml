@@ -32,29 +32,29 @@ services:
     deploy:
       replicas: 4
 
-  #  fileChunk:
-  #    build:
-  #      context: .
-  #    image: fileshard
-  #    env_file: docker-compose.env
-  #    environment:
-  #      SERVICES: file-chunk
-  #    depends_on:
-  #      - nats
-  #    networks:
-  #      - internal
+  fileChunk:
+    build:
+      context: .
+    image: fileshard
+    env_file: docker-compose.env
+    environment:
+      SERVICES: file-chunk
+    depends_on:
+      - nats
+    networks:
+      - internal
 
-  #  fileChunkDuplicate:
-  #    build:
-  #      context: .
-  #    image: fileshard
-  #    env_file: docker-compose.env
-  #    environment:
-  #      SERVICES: file-chunk-duplicate
-  #    depends_on:
-  #      - nats
-  #    networks:
-  #      - internal
+  fileChunkDuplicate:
+    build:
+      context: .
+    image: fileshard
+    env_file: docker-compose.env
+    environment:
+      SERVICES: file-chunk-duplicate
+    depends_on:
+      - nats
+    networks:
+      - internal
 
   mongo:
     image: mongo:4

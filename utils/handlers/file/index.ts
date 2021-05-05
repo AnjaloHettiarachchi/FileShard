@@ -9,6 +9,10 @@ import { ServiceBroker } from "moleculer";
 import { EventContext } from "../../interfaces/event-context.interface";
 import { FileShardLogger } from "../../logger";
 import { WorkerNode } from "../../models/worker-node";
+import { FileReceiveResponse } from "../../interfaces/file-receive-response.interface";
+import { FileDocument } from "../../interfaces/file-document.interface";
+import { FileChunkDocument } from "../../interfaces/file-chunk-document.interface";
+import { FileChunkDuplicateDocument } from "../../interfaces/file-chunk-duplicate-document.interface";
 
 const tempDir = path.join("/app", "dist", "public", "__temp");
 const chunkDir = path.join("/app", "dist", "public", "__chunks");
@@ -54,19 +58,28 @@ export default class FileHandler {
 				filePath = path.join(duplicateDir, originalName);
 			}
 
-			let md5sum = "";
-
 			const writeStream = fs.createWriteStream(filePath);
 
 			writeStream.on("close", async () => {
 				switch (receiveType) {
 					case "upload": {
 						// File uploaded successfully.
-						// Save file record to Master DB...
 						this.logger.log(`Uploaded file stored in ${filePath}`);
 
 						// Calculate MD5 Hash for whole file.
-						md5sum = md5File.sync(filePath);
+						const md5sum = md5File.sync(filePath);
+
+						// Save file record to 'master_file' collection...
+						const fileDoc: FileDocument = await this.serviceBroker.call(
+							"file.create",
+							{
+								name: path.parse(filePath).name,
+								originalName,
+								type: mime.lookup(path.parse(filePath).base),
+								md5sum,
+								size: fs.statSync(filePath).size,
+							} as FileDocument
+						);
 
 						// Send chunks to slaves...
 						const currentAvailableNodeIds = await this.workerNode.getOtherNodeIds();
@@ -77,11 +90,30 @@ export default class FileHandler {
 							numberOfChunks
 						);
 
+						currentAvailableNodeIds.unshift(
+							this.serviceBroker.nodeID
+						);
+
 						// Send chunks...
-						await this.sendChunksToAvailableSlaveNodes(
+						const chunkRes: FileReceiveResponse[] = await this.sendChunksToAvailableSlaveNodes(
+							fileDoc._id,
 							fileChunks,
 							currentAvailableNodeIds
 						);
+
+						for (const doc of chunkRes) {
+							const otherDocs = chunkRes.filter(v => v !== doc);
+							await this.sendDuplicatesToAvailableSlaveNodes(
+								doc.chunk,
+								otherDocs.map(docx => docx.chunk),
+								fileChunks
+							);
+						}
+
+						resolve({
+							success: true,
+							file: fileDoc,
+						} as FileReceiveResponse);
 						break;
 					}
 
@@ -90,7 +122,24 @@ export default class FileHandler {
 						this.logger.log(`Chunk file stored in ${filePath}`);
 
 						// Calculate MD5 Hash for whole file.
-						md5sum = md5File.sync(filePath);
+						const md5sum = md5File.sync(filePath);
+
+						// Save file chunk record to 'file_chunks' collection...
+						const fileChunkDoc: FileChunkDocument = await this.serviceBroker.call(
+							"fileChunk.create",
+							{
+								name: path.parse(filePath).base,
+								location: ctx.broker.nodeID,
+								md5sum,
+								size: fs.statSync(filePath).size,
+								file: ctx.meta.fileDocId,
+							} as FileChunkDocument
+						);
+
+						resolve({
+							success: true,
+							chunk: fileChunkDoc,
+						} as FileReceiveResponse);
 						break;
 					}
 
@@ -99,7 +148,24 @@ export default class FileHandler {
 						this.logger.log(`Duplicate file stored in ${filePath}`);
 
 						// Calculate MD5 Hash for whole file.
-						md5sum = md5File.sync(filePath);
+						const md5sum = md5File.sync(filePath);
+
+						// Save file chunk duplicate record to 'file_chunks_duplicates' collection...
+						const fileChunkDuplicateDoc: FileChunkDuplicateDocument = await this.serviceBroker.call(
+							"fileChunkDuplicate.create",
+							{
+								name: path.parse(filePath).base,
+								location: ctx.broker.nodeID,
+								md5sum,
+								size: fs.statSync(filePath).size,
+								chunk: ctx.meta.fileChunkId,
+							} as FileChunkDuplicateDocument
+						);
+
+						resolve({
+							success: true,
+							duplicate: fileChunkDuplicateDoc,
+						} as FileReceiveResponse);
 						break;
 					}
 
@@ -107,16 +173,6 @@ export default class FileHandler {
 						reject(Error("Invalid file receive type."));
 					}
 				}
-
-				resolve({
-					success: true,
-					file: {
-						name: path.parse(filePath).name,
-						type: mime.lookup(path.parse(filePath).base),
-						md5sum,
-						size: fs.statSync(filePath).size,
-					},
-				} as FileReceiveResponse);
 			});
 
 			writeStream.on("error", err => {
@@ -128,36 +184,24 @@ export default class FileHandler {
 	}
 
 	private async sendChunksToAvailableSlaveNodes(
-		fileChunks: string[],
+		fileDocId: string,
+		chunks: string[],
 		availableNodes: string[]
-	) {
-		const firstChunk = fileChunks.shift();
-		const firstChunkBasename = path.parse(firstChunk).base;
-		fs.copyFileSync(firstChunk, path.join(chunkDir, firstChunkBasename));
-
-		await this.sendDuplicatesToAvailableSlaveNodes(fileChunks, "self");
-
+	): Promise<FileReceiveResponse[]> {
 		const promises: any[] = [];
 
-		for (const chunk of fileChunks) {
-			const index = fileChunks.indexOf(chunk);
+		for (const chunk of chunks) {
+			const index = chunks.indexOf(chunk);
 			const chunkBasename = path.parse(chunk).base;
 			const currentNodeId = availableNodes[index];
 
-			await this.sendDuplicatesToAvailableSlaveNodes(
-				fileChunks,
-				currentNodeId,
-				chunk,
-				firstChunk
-			);
-
 			const readStream = fs.createReadStream(chunk);
-			// Send chunk to node
 
+			// Send chunk to node
 			promises.push(
 				this.serviceBroker.call("file.chunk.store", readStream, {
 					nodeID: currentNodeId,
-					meta: { filename: chunkBasename },
+					meta: { filename: chunkBasename, fileDocId },
 				})
 			);
 		}
@@ -166,42 +210,34 @@ export default class FileHandler {
 	}
 
 	private async sendDuplicatesToAvailableSlaveNodes(
-		list: string[],
-		nodeId: "self" | string,
-		exclude?: string,
-		include?: string
+		fileChunkDoc: FileChunkDocument,
+		otherChunkDocs: FileChunkDocument[],
+		chunkList: string[]
 	) {
-		let duplicateList = list;
-
-		if (exclude) {
-			duplicateList = list.filter(item => item !== exclude);
-		}
-
-		if (include && !duplicateList.includes(include)) {
-			duplicateList.push(include);
-		}
-
-		if (nodeId === "self") {
-			return duplicateList.forEach(item => {
-				this.logger.log(`node: ${nodeId} file: ${item}`);
-				fs.copyFileSync(
-					item,
-					path.join(duplicateDir, path.parse(item).base)
-				);
-			});
-		}
-
 		const promises: any[] = [];
 
-		for (const duplicate of duplicateList) {
-			this.logger.log(`node: ${nodeId} file: ${duplicate}`);
+		const chunkPath = path.join(tempDir, fileChunkDoc.name);
+		const chunkStoredNode = fileChunkDoc.location;
+		const chunksExceptCurrent = chunkList.filter(
+			chunk => chunk !== chunkPath
+		);
+
+		for (const duplicate of chunksExceptCurrent) {
+			const nodeId = chunkStoredNode;
+			const duplicateBasename = path.parse(duplicate).base;
+			const currentChunkDocId = otherChunkDocs.find(
+				doc => doc.name === duplicateBasename
+			)._id;
 
 			const readStream = fs.createReadStream(duplicate);
 
 			promises.push(
 				this.serviceBroker.call("file.duplicate.store", readStream, {
 					nodeID: nodeId,
-					meta: { filename: path.parse(duplicate).base },
+					meta: {
+						filename: duplicateBasename,
+						fileChunkId: currentChunkDocId,
+					},
 				})
 			);
 		}

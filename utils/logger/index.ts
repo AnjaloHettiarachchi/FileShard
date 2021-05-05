@@ -1,3 +1,4 @@
+import { inspect } from "util";
 import Moleculer, { LoggerInstance } from "moleculer";
 import MoleculerError = Moleculer.Errors.MoleculerError;
 
@@ -28,6 +29,34 @@ export class FileShardLogger {
 			case "info": {
 				this.loggerInstance.info(
 					`${prefix ? prefix : this.logPrefix} >>> ${message}`
+				);
+				break;
+			}
+
+			default: {
+				throw new MoleculerError(
+					"FileShardLogger: Unidentified log level."
+				);
+			}
+		}
+	}
+
+	public inspect(value: any, prefix?: string) {
+		switch (this.logLevel) {
+			case "debug": {
+				this.loggerInstance.debug(
+					`${prefix ? prefix : this.logPrefix} >>> inspect: ${inspect(
+						value
+					)}`
+				);
+				break;
+			}
+
+			case "info": {
+				this.loggerInstance.info(
+					`${prefix ? prefix : this.logPrefix} >>> inspect: ${inspect(
+						value
+					)}`
 				);
 				break;
 			}
