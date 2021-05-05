@@ -107,24 +107,6 @@ export default class ApiService extends Service {
 								files: 1,
 							},
 						},
-
-						onAfterCall: (
-							ctx: any,
-							route: any,
-							req: any,
-							res: {
-								setHeader: (arg0: string, arg1: string) => void;
-							},
-							data: any
-						) => {
-							ctx.broker.logger.info(
-								"async onAfterCall in upload route"
-							);
-							return new Promise(resolve => {
-								res.setHeader("X-Response-Type", typeof data);
-								resolve(data);
-							});
-						},
 					},
 				],
 				// Do not log client side errors (does not log an error response when the error.code is 400<=X<500)

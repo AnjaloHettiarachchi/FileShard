@@ -42,6 +42,20 @@ export default class FileService extends Service {
 				},
 				"upload": {
 					handler: async ctx => await this.ActionUpload(ctx),
+					hooks: {
+						after: async (ctx, resp: FileReceiveResponse) => {
+							if (resp.success && resp.file) {
+								const fileObject = await this.broker.call(
+									"file.create",
+									resp.file
+								);
+
+								return { success: true, file: fileObject };
+							}
+
+							return resp;
+						},
+					},
 				},
 				"chunk.retrieve": {
 					rest: "GET /chunk/retrieve",
@@ -63,7 +77,6 @@ export default class FileService extends Service {
 					handler: () => this.ActionNodeInfo(),
 				},
 				"bully.election": {
-					rest: "GET /bully/election", // TODO: Try removing path as route is internal only.
 					handler: async ctx => this.ActionBullyElection(ctx),
 				},
 			},

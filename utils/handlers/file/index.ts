@@ -3,6 +3,8 @@ import * as fs from "fs";
 import mkdirp from "mkdirp";
 // @ts-ignore
 import splitFile from "split-file";
+import md5File from "md5-file";
+import mime from "mime-types";
 import { ServiceBroker } from "moleculer";
 import { EventContext } from "../../interfaces/event-context.interface";
 import { FileShardLogger } from "../../logger";
@@ -38,7 +40,7 @@ export default class FileHandler {
 	public handleFileReceive(
 		ctx: EventContext,
 		receiveType: "upload" | "chunk" | "duplicate"
-	) {
+	): Promise<FileReceiveResponse> {
 		const originalName = ctx.meta.filename;
 		const uniqueFilename = FileHandler.getUniqueFilename(originalName);
 
@@ -51,6 +53,9 @@ export default class FileHandler {
 			} else {
 				filePath = path.join(duplicateDir, originalName);
 			}
+
+			let md5sum = "";
+
 			const writeStream = fs.createWriteStream(filePath);
 
 			writeStream.on("close", async () => {
@@ -59,6 +64,9 @@ export default class FileHandler {
 						// File uploaded successfully.
 						// Save file record to Master DB...
 						this.logger.log(`Uploaded file stored in ${filePath}`);
+
+						// Calculate MD5 Hash for whole file.
+						md5sum = md5File.sync(filePath);
 
 						// Send chunks to slaves...
 						const currentAvailableNodeIds = await this.workerNode.getOtherNodeIds();
@@ -74,23 +82,24 @@ export default class FileHandler {
 							fileChunks,
 							currentAvailableNodeIds
 						);
-
-						// Resolve response
-						resolve({ success: true, meta: ctx.meta });
 						break;
 					}
 
 					case "chunk": {
 						// File uploaded successfully.
 						this.logger.log(`Chunk file stored in ${filePath}`);
-						resolve({ success: true, meta: ctx.meta });
+
+						// Calculate MD5 Hash for whole file.
+						md5sum = md5File.sync(filePath);
 						break;
 					}
 
 					case "duplicate": {
 						// File uploaded successfully.
 						this.logger.log(`Duplicate file stored in ${filePath}`);
-						resolve({ success: true, meta: ctx.meta });
+
+						// Calculate MD5 Hash for whole file.
+						md5sum = md5File.sync(filePath);
 						break;
 					}
 
@@ -98,6 +107,16 @@ export default class FileHandler {
 						reject(Error("Invalid file receive type."));
 					}
 				}
+
+				resolve({
+					success: true,
+					file: {
+						name: path.parse(filePath).name,
+						type: mime.lookup(path.parse(filePath).base),
+						md5sum,
+						size: fs.statSync(filePath).size,
+					},
+				} as FileReceiveResponse);
 			});
 
 			writeStream.on("error", err => {
@@ -143,7 +162,7 @@ export default class FileHandler {
 			);
 		}
 
-		return await Promise.all(promises);
+		return Promise.all(promises);
 	}
 
 	private async sendDuplicatesToAvailableSlaveNodes(
@@ -187,6 +206,6 @@ export default class FileHandler {
 			);
 		}
 
-		return await Promise.all(promises);
+		return Promise.all(promises);
 	}
 }
