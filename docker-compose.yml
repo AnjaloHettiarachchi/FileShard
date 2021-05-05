@@ -18,18 +18,6 @@ services:
     networks:
       - internal
 
-  #  greeter:
-  #    build:
-  #      context: .
-  #    image: fileshard
-  #    env_file: docker-compose.env
-  #    environment:
-  #      SERVICES: greeter
-  #    depends_on:
-  #      - nats
-  #    networks:
-  #      - internal
-
   file:
     build:
       context: .
@@ -42,23 +30,36 @@ services:
     networks:
       - internal
     deploy:
-      replicas: 4
+      replicas: 3
 
-  #  products:
+  #  fileChunk:
   #    build:
   #      context: .
   #    image: fileshard
   #    env_file: docker-compose.env
   #    environment:
-  #      SERVICES: products
+  #      SERVICES: file-chunk
   #    depends_on:
-  #      - mongo
+  #      - nats
+  #    networks:
+  #      - internal
+
+  #  fileChunkDuplicate:
+  #    build:
+  #      context: .
+  #    image: fileshard
+  #    env_file: docker-compose.env
+  #    environment:
+  #      SERVICES: file-chunk-duplicate
+  #    depends_on:
   #      - nats
   #    networks:
   #      - internal
 
   mongo:
     image: mongo:4
+    ports:
+      - 27017:27017
     volumes:
       - data:/data/db
     networks:

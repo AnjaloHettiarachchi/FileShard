@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/explicit-member-accessibility,no-underscore-dangle */
 import Moleculer, { ServiceBroker } from "moleculer";
-import { NodeItem } from "../interfaces/nodeItem.interface";
+import { NodeItem } from "../interfaces/node-item.interface";
 import { ACTION_NAMES } from "../../constants";
 
 export class WorkerNode {

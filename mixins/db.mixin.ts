@@ -1,19 +1,19 @@
 "use strict";
 
-import { existsSync } from "fs";
-import { sync } from "mkdirp";
 import { Context, Service, ServiceSchema } from "moleculer";
 import DbService from "moleculer-db";
 
 export default class Connection
 	implements Partial<ServiceSchema>, ThisType<Service> {
-	private cacheCleanEventName: string;
+	private readonly cacheCleanEventName: string;
+	private readonly schema: Partial<ServiceSchema> & ThisType<Service>;
 	private collection: string;
-	private schema: Partial<ServiceSchema> & ThisType<Service>;
 
-	public constructor(public collectionName: string) {
+	public constructor(collectionName: string) {
 		this.collection = collectionName;
+
 		this.cacheCleanEventName = `cache.clean.${this.collection}`;
+
 		this.schema = {
 			mixins: [DbService],
 			events: {
@@ -44,50 +44,26 @@ export default class Connection
 					await ctx.broadcast(this.cacheCleanEventName);
 				},
 			},
-			async started() {
-				// Check the count of items in the DB. If it's empty,
-				// Call the `seedDB` method of the service.
-				if (this.seedDB) {
-					const count = await this.adapter.count();
-					if (count === 0) {
-						this.logger.info(
-							`The '${this.collection}' collection is empty. Seeding the collection...`
-						);
-						await this.seedDB();
-						this.logger.info(
-							"Seeding is done. Number of records:",
-							await this.adapter.count()
-						);
-					}
-				}
+			stopped: async () => {
+				//
 			},
 		};
 	}
 
-	public start() {
-		if (process.env.MONGO_URI) {
-			// Mongo adapter
-			// eslint-disable-next-line @typescript-eslint/no-var-requires
-			const MongoAdapter = require("moleculer-db-adapter-mongo");
-			this.schema.adapter = new MongoAdapter(process.env.MONGO_URI);
-			this.schema.collection = this.collection;
-		} else if (process.env.NODE_ENV === "test") {
-			// NeDB memory adapter for testing
-			// @ts-ignore
-			this.schema.adapter = new DbService.MemoryAdapter();
-		} else {
-			// NeDB file DB adapter
+	public connectToMasterDb() {
+		const uri = `${process.env.MONGO_URI}_master`;
+		// eslint-disable-next-line @typescript-eslint/no-var-requires
+		const MongoDBAdapter = require("moleculer-db-adapter-mongo");
+		this.schema.adapter = new MongoDBAdapter(uri);
+		this.schema.collection = this.collection;
+		return this.schema;
+	}
 
-			// Create data folder
-			if (!existsSync("./data")) {
-				sync("./data");
-			}
-			// @ts-ignore
-			this.schema.adapter = new DbService.MemoryAdapter({
-				filename: `./data/${this.collection}.db`,
-			});
-		}
-
+	public changeConnection(nodeId: string) {
+		const uri = `${process.env.MONGO_URI}_${nodeId}`;
+		// eslint-disable-next-line @typescript-eslint/no-var-requires
+		const MongoDBAdapter = require("moleculer-db-adapter-mongo");
+		this.schema.adapter = new MongoDBAdapter(uri);
 		return this.schema;
 	}
 

@@ -1,10 +1,10 @@
-import { WorkerNode } from "../models/workerNode";
-import { parseComparableNodeId } from "../common";
-import { ServiceConfig } from "../configs/service.config";
-import { ACTION_NAMES, CACHE_KEYS, EVENT_NAMES } from "../../constants";
-import { NodeInfoResponse } from "../interfaces/nodeInfoResponse.interface";
-import { BullyMsg } from "../interfaces/bullyMsg.interface";
-import { BullyMsgContext } from "../interfaces/bullyMsgContext.interface";
+import { WorkerNode } from "../../models/worker-node";
+import { parseComparableNodeId } from "../../common";
+import { ServiceConfig } from "../../configs/service.config";
+import { ACTION_NAMES, CACHE_KEYS, EVENT_NAMES } from "../../../constants";
+import { NodeInfoResponse } from "../../interfaces/node-info-response.interface";
+import { BullyMsg } from "../../interfaces/bully-msg.interface";
+import { BullyMsgContext } from "../../interfaces/bully-msg-context.interface";
 
 export class Bully {
 	private readonly selfNode: WorkerNode;

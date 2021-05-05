@@ -1,22 +1,25 @@
-import { types } from "util";
 import Moleculer, { Service, ServiceBroker } from "moleculer";
 import { ServiceConfig } from "../utils/configs/service.config";
 import { CACHE_KEYS } from "../constants";
-import { WorkerNode } from "../utils/models/workerNode";
-import { Bully } from "../utils/election/bully";
-import { NodeInfoResponse } from "../utils/interfaces/nodeInfoResponse.interface";
-import { EventContext } from "../utils/interfaces/eventContext.interface";
+import { WorkerNode } from "../utils/models/worker-node";
+import { Bully } from "../utils/handlers/election/bully";
+import { NodeInfoResponse } from "../utils/interfaces/node-info-response.interface";
+import { EventContext } from "../utils/interfaces/event-context.interface";
+import DBConnection from "../mixins/db.mixin";
+import FileHandler from "../utils/handlers/file";
 import MoleculerServerError = Moleculer.Errors.MoleculerServerError;
-import MoleculerError = Moleculer.Errors.MoleculerError;
 
 export default class FileService extends Service {
 	private readonly SERVICE_NAME = "file";
 	private readonly workerNode: WorkerNode;
 	private readonly serviceConfig: ServiceConfig;
+	private readonly fileHandler: FileHandler;
 	private readonly bully: Bully;
 
 	public constructor(broker: ServiceBroker) {
 		super(broker);
+		const DBMixin = new DBConnection(this.SERVICE_NAME).connectToMasterDb();
+
 		this.workerNode = new WorkerNode(
 			this.broker.nodeID,
 			this.SERVICE_NAME,
@@ -27,24 +30,40 @@ export default class FileService extends Service {
 			this.broker.cacher
 		);
 		this.bully = new Bully(this.workerNode, this.serviceConfig);
+		this.fileHandler = new FileHandler(this.workerNode, this.broker);
 
 		this.parseServiceSchema({
 			name: this.SERVICE_NAME,
+			mixins: [DBMixin],
 			actions: {
 				"hello": {
 					rest: "GET /hello",
-					async handler(): Promise<string> {
-						return this.ActionHello();
-					},
+					handler: async () => await this.ActionHello(),
+				},
+				"upload": {
+					handler: async ctx => await this.ActionUpload(ctx),
+				},
+				"chunk.retrieve": {
+					rest: "GET /chunk/retrieve",
+					handler: async ctx => await this.ActionChunkRetrieve(ctx),
+				},
+				"chunk.store": {
+					handler: async ctx => await this.ActionChunkStore(ctx),
+				},
+				"duplicate.retrieve": {
+					rest: "GET /duplicate/retrieve",
+					handler: async ctx =>
+						await this.ActionDuplicateRetrieve(ctx),
+				},
+				"duplicate.store": {
+					handler: async ctx => await this.ActionDuplicateStore(ctx),
 				},
 				"node.info": {
 					rest: "GET /node/info",
-					async handler() {
-						return this.ActionNodeInfo();
-					},
+					handler: () => this.ActionNodeInfo(),
 				},
 				"bully.election": {
-					rest: "GET /bully/election",
+					rest: "GET /bully/election", // TODO: Try removing path as route is internal only.
 					handler: async ctx => this.ActionBullyElection(ctx),
 				},
 			},
@@ -55,6 +74,36 @@ export default class FileService extends Service {
 				},
 				"bully.victory"(ctx: EventContext) {
 					this.handleBullyVictoryEvent(ctx);
+				},
+			},
+			methods: {
+				initService: async () => {
+					try {
+						const masterNodeId = await this.serviceConfig.get(
+							CACHE_KEYS.SERVICE_CURRENT_MASTER
+						);
+
+						// Service doesn't have elected a Master yet. Appoint self as Master...
+						if (masterNodeId === null) {
+							await this.serviceConfig.set(
+								CACHE_KEYS.SERVICE_CURRENT_MASTER,
+								this.broker.nodeID
+							);
+
+							this.workerNode.coordinatorNodeId = this.broker.nodeID;
+							this.workerNode.selfCoordinatorState = true;
+							//	Service already have a Master.
+						} else {
+							this.workerNode.coordinatorNodeId = masterNodeId as string;
+							this.workerNode.selfCoordinatorState =
+								masterNodeId === this.broker.nodeID;
+						}
+					} catch (e) {
+						throw new MoleculerServerError(
+							"Node started lifecycle function failed. Error: " +
+								e.message
+						);
+					}
 				},
 			},
 			started: async () => {
@@ -91,45 +140,31 @@ export default class FileService extends Service {
 		return await this.bully.handleElectionMsg(ctx);
 	}
 
+	public async ActionUpload(ctx: EventContext) {
+		return await this.fileHandler.handleFileReceive(ctx, "upload");
+	}
+
+	public async ActionChunkRetrieve(ctx: EventContext) {
+		//
+	}
+
+	public async ActionChunkStore(ctx: EventContext) {
+		return await this.fileHandler.handleFileReceive(ctx, "chunk");
+	}
+
+	public async ActionDuplicateRetrieve(ctx: EventContext) {
+		//
+	}
+
+	public async ActionDuplicateStore(ctx: EventContext) {
+		return await this.fileHandler.handleFileReceive(ctx, "duplicate");
+	}
+
 	public async handleBullyVictoryEvent(ctx: EventContext) {
 		return this.bully.handleVictoryMsg(ctx);
 	}
 
-	private async initService() {
-		try {
-			await this.serviceConfig
-				.get(CACHE_KEYS.SERVICE_CURRENT_MASTER)
-				.then(async res => {
-					if (types.isNativeError(res)) {
-						throw new MoleculerError(
-							"Error occurred while getting Master Node from ServiceConfig."
-						);
-					}
-
-					// Service doesn't have elected a Master yet.
-					if (res === null) {
-						await this.serviceConfig.set(
-							CACHE_KEYS.SERVICE_CURRENT_MASTER,
-							this.broker.nodeID
-						);
-
-						this.workerNode.coordinatorNodeId = this.broker.nodeID;
-						this.workerNode.selfCoordinatorState = true;
-						//	Service already have a Master.
-					} else {
-						this.workerNode.coordinatorNodeId = res as string;
-						this.workerNode.selfCoordinatorState =
-							res === this.broker.nodeID;
-					}
-				});
-		} catch (e) {
-			throw new MoleculerServerError(
-				"Node started lifecycle function failed. Error: " + e.message
-			);
-		}
-	}
-
-	private async handleNodeDisconnectEvent(ctx: EventContext): Promise<void> {
+	public async handleNodeDisconnectEvent(ctx: EventContext): Promise<void> {
 		const disconnectedNodeId = ctx.params.node.id;
 
 		if (disconnectedNodeId === this.workerNode.coordinatorNodeId) {

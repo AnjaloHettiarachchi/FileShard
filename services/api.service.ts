@@ -1,4 +1,4 @@
-import { IncomingMessage, ServerResponse } from "http";
+import { IncomingMessage } from "http";
 import { Context, Service, ServiceBroker } from "moleculer";
 import ApiGateway from "moleculer-web";
 import { ServiceConfig } from "../utils/configs/service.config";
@@ -15,12 +15,15 @@ export default class ApiService extends Service {
 			settings: {
 				port: process.env.PORT || 3000,
 
+				path: "/api",
+
 				routes: [
 					{
-						path: "/api",
+						path: "/",
 						whitelist: [
 							// Access to any actions in all services under "/api" URL
-							"**",
+							"file.hello",
+							"file.node.info",
 						],
 						// Route-level Express middlewares. More info: https://moleculer.services/docs/0.14/moleculer-web.html#Middlewares
 						use: [
@@ -49,33 +52,6 @@ export default class ApiService extends Service {
 						autoAliases: true,
 
 						aliases: {},
-						/**
-						 * Before call hook. You can check the request.
-						 * @param {Context} ctx
-						 * @param {Object} route
-						 * @param {IncomingMessage} req
-						 * @param {ServerResponse} res
-						 * @param {Object} data
-					onBeforeCall(ctx: Context<any,{userAgent: string}>,
-					 route: object, req: IncomingMessage, res: ServerResponse) {
-					  Set request headers to context meta
-					  ctx.meta.userAgent = req.headers["user-agent"];
-					},
-						 */
-
-						/**
-						 * After call hook. You can modify the data.
-						 * @param {Context} ctx
-						 * @param {Object} route
-						 * @param {IncomingMessage} req
-						 * @param {ServerResponse} res
-						 * @param {Object} data
-						 *
-					 onAfterCall(ctx: Context, route: object, req: IncomingMessage, res: ServerResponse, data: object) {
-					// Async function which return with Promise
-					return doSomething(ctx, res, data);
-				},
-						 */
 
 						// Calling options. More info: https://moleculer.services/docs/0.14/moleculer-web.html#Calling-options
 						callingOptions: {},
@@ -92,10 +68,63 @@ export default class ApiService extends Service {
 						},
 
 						// Mapping policy setting. More info: https://moleculer.services/docs/0.14/moleculer-web.html#Mapping-policy
-						mappingPolicy: "all", // Available values: "all", "restrict"
+						mappingPolicy: "restrict", // Available values: "all", "restrict"
 
 						// Enable/disable logging
 						logging: true,
+					},
+					{
+						path: "/file",
+
+						use: [
+							async (req: any, res: any, next: () => {}) => {
+								const serviceConfig = new ServiceConfig(
+									"file",
+									this.broker.cacher
+								);
+								req.$ctx.meta.masterNodeId = await serviceConfig.get(
+									CACHE_KEYS.SERVICE_CURRENT_MASTER
+								);
+								next();
+							},
+						],
+
+						bodyParsers: {
+							json: false,
+							urlencoded: false,
+						},
+
+						mappingPolicy: "restrict",
+						aliases: {
+							"POST /upload": "multipart:file.upload",
+							"POST /chunk/store": "multipart:file.chunk.store",
+							"POST /duplicate/store":
+								"multipart:file.duplicate.store",
+						},
+
+						busboyConfig: {
+							limits: {
+								files: 1,
+							},
+						},
+
+						onAfterCall: (
+							ctx: any,
+							route: any,
+							req: any,
+							res: {
+								setHeader: (arg0: string, arg1: string) => void;
+							},
+							data: any
+						) => {
+							ctx.broker.logger.info(
+								"async onAfterCall in upload route"
+							);
+							return new Promise(resolve => {
+								res.setHeader("X-Response-Type", typeof data);
+								resolve(data);
+							});
+						},
 					},
 				],
 				// Do not log client side errors (does not log an error response when the error.code is 400<=X<500)
