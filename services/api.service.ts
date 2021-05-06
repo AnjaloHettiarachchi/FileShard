@@ -24,6 +24,7 @@ export default class ApiService extends Service {
 							// Access to any actions in all services under "/api" URL
 							"file.hello",
 							"file.node.info",
+							"file.list",
 						],
 						// Route-level Express middlewares. More info: https://moleculer.services/docs/0.14/moleculer-web.html#Middlewares
 						use: [

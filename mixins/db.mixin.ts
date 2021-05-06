@@ -44,7 +44,7 @@ export default class Connection
 					await ctx.broadcast(this.cacheCleanEventName);
 				},
 			},
-			stopped: async () => {
+			started: async () => {
 				//
 			},
 		};

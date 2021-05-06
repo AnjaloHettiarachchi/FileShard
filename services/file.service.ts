@@ -47,14 +47,12 @@ export default class FileService extends Service {
 					handler: async ctx => await this.ActionUpload(ctx),
 				},
 				"chunk.retrieve": {
-					rest: "GET /chunk/retrieve",
 					handler: async ctx => await this.ActionChunkRetrieve(ctx),
 				},
 				"chunk.store": {
 					handler: async ctx => await this.ActionChunkStore(ctx),
 				},
 				"duplicate.retrieve": {
-					rest: "GET /duplicate/retrieve",
 					handler: async ctx =>
 						await this.ActionDuplicateRetrieve(ctx),
 				},
