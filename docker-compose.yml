@@ -30,7 +30,7 @@ services:
     networks:
       - internal
     deploy:
-      replicas: 4
+      replicas: 3
 
   fileChunk:
     build:

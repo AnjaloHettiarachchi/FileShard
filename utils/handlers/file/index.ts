@@ -17,6 +17,7 @@ import { FileChunkDuplicateDocument } from "../../interfaces/file-chunk-duplicat
 const tempDir = path.join("/app", "dist", "public", "__temp");
 const chunkDir = path.join("/app", "dist", "public", "__chunks");
 const duplicateDir = path.join("/app", "dist", "public", "__duplicates");
+const downloadDir = path.join("/app", "storage");
 
 export default class FileHandler {
 	private readonly workerNode: WorkerNode;
@@ -37,7 +38,7 @@ export default class FileHandler {
 		mkdirp.sync(duplicateDir);
 	}
 
-	private static getUniqueFilename(originalName: string): string {
+	private static getUniqueName(originalName: string): string {
 		return `${Date.now()}__${originalName}`;
 	}
 
@@ -46,7 +47,7 @@ export default class FileHandler {
 		receiveType: "upload" | "chunk" | "duplicate"
 	): Promise<FileReceiveResponse> {
 		const originalName = ctx.meta.filename;
-		const uniqueFilename = FileHandler.getUniqueFilename(originalName);
+		const uniqueFilename = FileHandler.getUniqueName(originalName);
 
 		return new Promise((resolve, reject) => {
 			let filePath: string;
@@ -181,6 +182,81 @@ export default class FileHandler {
 
 			ctx.params.pipe(writeStream);
 		});
+	}
+
+	public async handleFileDownload(ctx: EventContext): Promise<any> {
+		const fileId = ctx.params.id;
+		const downloadLinkList: string[] = [];
+
+		// Get chunk records...
+		const chunkDocs: FileChunkDocument[] = await this.serviceBroker.call(
+			"fileChunk.find",
+			{ query: { file: fileId } }
+		);
+
+		// Check if all chunk holders are alive
+		const allAvailableNodes = await this.workerNode.getAllNodeIds();
+		const isEveryChunkHolderAlive = chunkDocs.every(chunk =>
+			allAvailableNodes.includes(chunk.location)
+		);
+
+		if (isEveryChunkHolderAlive) {
+			// Go ahead and retrieve from those locations
+			const dirPath = path.join(
+				downloadDir,
+				FileHandler.getUniqueName("chunks")
+			);
+			mkdirp.sync(dirPath);
+
+			return new Promise((resolve, reject) => {
+				for (const doc of chunkDocs) {
+					const currentIndex = chunkDocs.indexOf(doc);
+					const node = doc.location;
+					const filePath = path.join(dirPath, doc.name);
+
+					const writeStream = fs.createWriteStream(filePath);
+
+					this.serviceBroker
+						.call(
+							"file.chunk.retrieve",
+							{
+								filename: doc.name,
+							},
+							{ nodeID: node }
+						)
+						.then(
+							(stream: { pipe: (s: fs.WriteStream) => void }) => {
+								writeStream.on("error", err => {
+									reject(err);
+								});
+
+								writeStream.on("close", () => {
+									this.logger.log(
+										`Done retrieving chunk and saved in ${filePath}...`
+									);
+
+									downloadLinkList.push(filePath);
+
+									this.logger.log(`index: ${currentIndex}`);
+
+									if (!--chunkDocs.length) {
+										resolve({ chunks: downloadLinkList });
+									}
+								});
+
+								stream.pipe(writeStream);
+							}
+						);
+				}
+			});
+		} else {
+			// Look for duplicate location for the specific chunk
+		}
+	}
+
+	public async handleChunkRetrieve(ctx: EventContext) {
+		const filePath = path.join(chunkDir, ctx.params.filename);
+		return fs.createReadStream(filePath);
 	}
 
 	private async sendChunksToAvailableSlaveNodes(

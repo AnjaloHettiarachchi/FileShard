@@ -46,7 +46,17 @@ export default class FileService extends Service {
 				"upload": {
 					handler: async ctx => await this.ActionUpload(ctx),
 				},
+				"download": {
+					rest: "GET /download",
+					params: {
+						id: "string",
+					},
+					handler: async ctx => await this.ActionDownload(ctx),
+				},
 				"chunk.retrieve": {
+					params: {
+						filename: "string",
+					},
 					handler: async ctx => await this.ActionChunkRetrieve(ctx),
 				},
 				"chunk.store": {
@@ -163,8 +173,12 @@ export default class FileService extends Service {
 		return await this.fileHandler.handleFileReceive(ctx, "upload");
 	}
 
+	public async ActionDownload(ctx: EventContext) {
+		return await this.fileHandler.handleFileDownload(ctx);
+	}
+
 	public async ActionChunkRetrieve(ctx: EventContext) {
-		//
+		return await this.fileHandler.handleChunkRetrieve(ctx);
 	}
 
 	public async ActionChunkStore(ctx: EventContext) {

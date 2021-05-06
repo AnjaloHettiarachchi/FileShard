@@ -12,6 +12,11 @@ export default class FileChunkService extends Service {
 		this.parseServiceSchema({
 			name: this.SERVICE_NAME,
 			mixins: [DbMixin],
+			settings: {
+				populates: {
+					file: "file.get",
+				},
+			},
 		});
 	}
 }

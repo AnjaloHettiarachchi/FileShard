@@ -8,6 +8,8 @@ export interface EventContext extends Moleculer.Context {
 		fileChunkId: string;
 	};
 	params: {
+		filename: string;
+		id: string;
 		node: NodeItem;
 		on: (event: "error", callback: (v: any) => void) => void;
 		pipe: (v: any) => void;

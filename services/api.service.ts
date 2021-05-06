@@ -17,6 +17,20 @@ export default class ApiService extends Service {
 
 				path: "/api",
 
+				// Global middleware for master routing....
+				use: [
+					async (req: any, res: any, next: () => {}) => {
+						const serviceConfig = new ServiceConfig(
+							"file",
+							this.broker.cacher
+						);
+						req.$ctx.meta.masterNodeId = await serviceConfig.get(
+							CACHE_KEYS.SERVICE_CURRENT_MASTER
+						);
+						next();
+					},
+				],
+
 				routes: [
 					{
 						path: "/",
@@ -25,20 +39,9 @@ export default class ApiService extends Service {
 							"file.hello",
 							"file.node.info",
 							"file.list",
+							"file.download",
 						],
-						// Route-level Express middlewares. More info: https://moleculer.services/docs/0.14/moleculer-web.html#Middlewares
-						use: [
-							async (req: any, res: any, next: () => {}) => {
-								const serviceConfig = new ServiceConfig(
-									"file",
-									this.broker.cacher
-								);
-								req.$ctx.meta.masterNodeId = await serviceConfig.get(
-									CACHE_KEYS.SERVICE_CURRENT_MASTER
-								);
-								next();
-							},
-						],
+
 						// Enable/disable parameter merging method. More info: https://moleculer.services/docs/0.14/moleculer-web.html#Disable-merging
 						mergeParams: true,
 
@@ -76,19 +79,6 @@ export default class ApiService extends Service {
 					},
 					{
 						path: "/file",
-
-						use: [
-							async (req: any, res: any, next: () => {}) => {
-								const serviceConfig = new ServiceConfig(
-									"file",
-									this.broker.cacher
-								);
-								req.$ctx.meta.masterNodeId = await serviceConfig.get(
-									CACHE_KEYS.SERVICE_CURRENT_MASTER
-								);
-								next();
-							},
-						],
 
 						bodyParsers: {
 							json: false,

@@ -84,4 +84,26 @@ export class WorkerNode {
 
 		return nodeIds;
 	}
+
+	public async getAllNodeIds(): Promise<string[]> {
+		const nodeIds = Array<string>();
+		const nodeList: NodeItem[] = await this._serviceBroker.call(
+			ACTION_NAMES.INTERNAL_NODE_LIST,
+			{
+				withServices: true,
+				onlyAvailable: true,
+			}
+		);
+
+		for (const node of nodeList) {
+			const sameServiceNodes = node.services.some(
+				service => service.name === this._serviceName
+			);
+			if (sameServiceNodes) {
+				nodeIds.push(node.id);
+			}
+		}
+
+		return nodeIds;
+	}
 }
