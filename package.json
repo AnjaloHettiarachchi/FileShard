@@ -1,6 +1,6 @@
 {
   "name": "fileshard",
-  "version": "0.1.0",
+  "version": "0.1.13",
   "description": "A minimal prototype of a Distributed File System implemented with Moleculer JS.",
   "scripts": {
     "build": "rm -rf ./dist && tsc --build tsconfig.json",
