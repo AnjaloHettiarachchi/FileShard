@@ -63,6 +63,9 @@ export default class FileService extends Service {
 					handler: async ctx => await this.ActionChunkStore(ctx),
 				},
 				"duplicate.retrieve": {
+					params: {
+						filename: "string",
+					},
 					handler: async ctx =>
 						await this.ActionDuplicateRetrieve(ctx),
 				},
@@ -186,7 +189,7 @@ export default class FileService extends Service {
 	}
 
 	public async ActionDuplicateRetrieve(ctx: EventContext) {
-		//
+		return await this.fileHandler.handleDuplicateRetrieve(ctx);
 	}
 
 	public async ActionDuplicateStore(ctx: EventContext) {

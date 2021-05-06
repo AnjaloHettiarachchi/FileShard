@@ -6,6 +6,7 @@ import splitFile from "split-file";
 import md5File from "md5-file";
 import mime from "mime-types";
 import { ServiceBroker } from "moleculer";
+import lo_ from "lodash";
 import { EventContext } from "../../interfaces/event-context.interface";
 import { FileShardLogger } from "../../logger";
 import { WorkerNode } from "../../models/worker-node";
@@ -17,7 +18,7 @@ import { FileChunkDuplicateDocument } from "../../interfaces/file-chunk-duplicat
 const tempDir = path.join("/app", "dist", "public", "__temp");
 const chunkDir = path.join("/app", "dist", "public", "__chunks");
 const duplicateDir = path.join("/app", "dist", "public", "__duplicates");
-const downloadDir = path.join("/app", "storage");
+const downloadDir = path.join("/app", "dist", "public");
 
 export default class FileHandler {
 	private readonly workerNode: WorkerNode;
@@ -188,6 +189,12 @@ export default class FileHandler {
 		const fileId = ctx.params.id;
 		const downloadLinkList: string[] = [];
 
+		const dirPath = path.join(
+			downloadDir,
+			FileHandler.getUniqueName("chunks")
+		);
+		mkdirp.sync(dirPath);
+
 		// Get chunk records...
 		const chunkDocs: FileChunkDocument[] = await this.serviceBroker.call(
 			"fileChunk.find",
@@ -200,63 +207,162 @@ export default class FileHandler {
 			allAvailableNodes.includes(chunk.location)
 		);
 
-		if (isEveryChunkHolderAlive) {
-			// Go ahead and retrieve from those locations
-			const dirPath = path.join(
-				downloadDir,
-				FileHandler.getUniqueName("chunks")
-			);
-			mkdirp.sync(dirPath);
-
-			return new Promise((resolve, reject) => {
-				for (const doc of chunkDocs) {
-					const currentIndex = chunkDocs.indexOf(doc);
-					const node = doc.location;
-					const filePath = path.join(dirPath, doc.name);
-
-					const writeStream = fs.createWriteStream(filePath);
-
-					this.serviceBroker
-						.call(
-							"file.chunk.retrieve",
-							{
-								filename: doc.name,
-							},
-							{ nodeID: node }
-						)
-						.then(
-							(stream: { pipe: (s: fs.WriteStream) => void }) => {
-								writeStream.on("error", err => {
-									reject(err);
-								});
-
-								writeStream.on("close", () => {
-									this.logger.log(
-										`Done retrieving chunk and saved in ${filePath}...`
-									);
-
-									downloadLinkList.push(filePath);
-
-									this.logger.log(`index: ${currentIndex}`);
-
-									if (!--chunkDocs.length) {
-										resolve({ chunks: downloadLinkList });
-									}
-								});
-
-								stream.pipe(writeStream);
-							}
-						);
-				}
-			});
-		} else {
+		if (!isEveryChunkHolderAlive) {
 			// Look for duplicate location for the specific chunk
+			const unavailableChunks = chunkDocs.filter(
+				chunk => !allAvailableNodes.includes(chunk.location)
+			);
+
+			// Remove unavailable chunks from main chunk list...
+			lo_.remove(chunkDocs, chunk => unavailableChunks.includes(chunk));
+
+			// Get duplicates for unavailable chunks and added stored to the link list
+			const duplicateStoredPaths = await this.findAndRetrieveDuplicateOfChunks(
+				unavailableChunks,
+				dirPath
+			);
+
+			downloadLinkList.push(...duplicateStoredPaths);
 		}
+
+		// Go ahead and retrieve from those locations
+		return new Promise((resolve, reject) => {
+			for (const doc of chunkDocs) {
+				const node = doc.location;
+				const previousChecksum = doc.md5sum;
+				const filePath = path.join(dirPath, doc.name);
+
+				const writeStream = fs.createWriteStream(filePath);
+
+				this.serviceBroker
+					.call(
+						"file.chunk.retrieve",
+						{
+							filename: doc.name,
+						},
+						{ nodeID: node }
+					)
+					.then((stream: { pipe: (s: fs.WriteStream) => void }) => {
+						writeStream.on("error", err => {
+							reject(err);
+						});
+
+						writeStream.on("close", async () => {
+							this.logger.log(
+								`Done retrieving chunk and stored in ${filePath}`
+							);
+
+							const newChecksum = md5File.sync(filePath);
+
+							if (newChecksum === previousChecksum) {
+								this.logger.log(
+									`File's integrity check is valid in path ${filePath}`
+								);
+								downloadLinkList.push(filePath);
+							} else {
+								// Integrity check failed. Look for duplicates
+								this.logger.log(
+									`File's integrity check failed in path ${filePath}`
+								);
+								const duplicateStoredPaths = await this.findAndRetrieveDuplicateOfChunks(
+									[doc],
+									dirPath
+								);
+								downloadLinkList.push(...duplicateStoredPaths);
+							}
+
+							if (!--chunkDocs.length) {
+								resolve({
+									chunks: downloadLinkList,
+								});
+							}
+						});
+
+						stream.pipe(writeStream);
+					});
+			}
+		});
 	}
 
 	public async handleChunkRetrieve(ctx: EventContext) {
 		const filePath = path.join(chunkDir, ctx.params.filename);
 		return fs.createReadStream(filePath);
+	}
+
+	public async handleDuplicateRetrieve(ctx: EventContext) {
+		const filePath = path.join(duplicateDir, ctx.params.filename);
+		return fs.createReadStream(filePath);
+	}
+
+	private async findAndRetrieveDuplicateOfChunks(
+		missingChunks: FileChunkDocument[],
+		chunkStorePath: string
+	): Promise<string[]> {
+		return new Promise(async (resolve, reject) => {
+			const linkList: string[] = [];
+
+			for (const chunkDoc of missingChunks) {
+				const duplicateDocs: FileChunkDuplicateDocument[] = await this.serviceBroker.call(
+					"fileChunkDuplicate.find",
+					{ query: { chunk: chunkDoc._id } }
+				);
+
+				// Get a random duplicate from list...
+				const randomNode =
+					duplicateDocs[lo_.random(0, duplicateDocs.length - 1)]
+						.location;
+
+				const previousChecksum = chunkDoc.md5sum;
+				const filePath = path.join(chunkStorePath, chunkDoc.name);
+
+				const writeStream = fs.createWriteStream(filePath);
+
+				this.serviceBroker
+					.call(
+						"file.duplicate.retrieve",
+						{
+							filename: chunkDoc.name,
+						},
+						{ nodeID: randomNode }
+					)
+					.then((stream: { pipe: (s: fs.WriteStream) => void }) => {
+						writeStream.on("error", err => {
+							reject(err);
+						});
+
+						writeStream.on("close", async () => {
+							this.logger.log(
+								`Done retrieving duplicate chunk and stored in ${filePath}`
+							);
+
+							const newChecksum = md5File.sync(filePath);
+
+							if (newChecksum === previousChecksum) {
+								this.logger.log(
+									`File's integrity check is valid in path ${filePath}`
+								);
+								linkList.push(filePath);
+							} else {
+								// Integrity check failed. Look for duplicates
+								this.logger.log(
+									`File's integrity check failed in path ${filePath}`
+								);
+								const duplicateStoredPaths = await this.findAndRetrieveDuplicateOfChunks(
+									[chunkDoc],
+									chunkStorePath
+								);
+								linkList.push(...duplicateStoredPaths);
+							}
+
+							if (!--missingChunks.length) {
+								resolve(linkList);
+							}
+						});
+
+						stream.pipe(writeStream);
+					});
+			}
+		});
 	}
 
 	private async sendChunksToAvailableSlaveNodes(
