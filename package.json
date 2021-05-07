@@ -1,6 +1,6 @@
 {
   "name": "fileshard",
-  "version": "0.1.13",
+  "version": "0.1.19",
   "description": "A minimal prototype of a Distributed File System implemented with Moleculer JS.",
   "scripts": {
     "build": "rm -rf ./dist && tsc --build tsconfig.json",
@@ -22,7 +22,7 @@
     "moleculer",
     "distributed-file-system"
   ],
-  "author": "Anjalo Hettiarachchi",
+  "author": "Anjalo Hettiarachchi <anjalohettiarachchi@gmail.com>",
   "repository": {
     "type": "git",
     "url": "https://github.com/AnjaloHettiarachchi/FileShard"

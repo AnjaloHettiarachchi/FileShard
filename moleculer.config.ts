@@ -105,7 +105,7 @@ const brokerConfig: BrokerOptions = {
 	// Tracking requests and waiting for running requests before shuting down. More info: https://moleculer.services/docs/0.14/context.html#Context-tracking
 	tracking: {
 		// Enable feature
-		enabled: false,
+		enabled: true,
 		// Number of milliseconds to wait before shuting down the process.
 		shutdownTimeout: 5000,
 	},
@@ -125,7 +125,7 @@ const brokerConfig: BrokerOptions = {
 	// Settings of Circuit Breaker. More info: https://moleculer.services/docs/0.14/fault-tolerance.html#Circuit-Breaker
 	circuitBreaker: {
 		// Enable feature
-		enabled: false,
+		enabled: true,
 		// Threshold value. 0.5 means that 50% should be failed for tripping.
 		threshold: 0.5,
 		// Minimum request count. Below it, CB does not trip.
@@ -141,7 +141,7 @@ const brokerConfig: BrokerOptions = {
 	// Settings of bulkhead feature. More info: https://moleculer.services/docs/0.14/fault-tolerance.html#Bulkhead
 	bulkhead: {
 		// Enable feature.
-		enabled: false,
+		enabled: true,
 		// Maximum concurrent executions.
 		concurrency: 10,
 		// Maximum size of queue
