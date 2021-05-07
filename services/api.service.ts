@@ -39,6 +39,7 @@ export default class ApiService extends Service {
 							"file.hello",
 							"file.node.info",
 							"file.list",
+							"file.download.prepare",
 							"file.download",
 						],
 

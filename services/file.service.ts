@@ -1,3 +1,5 @@
+import path from "path";
+import * as fs from "fs";
 import Moleculer, { Service, ServiceBroker } from "moleculer";
 import { ServiceConfig } from "../utils/configs/service.config";
 import { CACHE_KEYS } from "../constants";
@@ -46,12 +48,57 @@ export default class FileService extends Service {
 				"upload": {
 					handler: async ctx => await this.ActionUpload(ctx),
 				},
-				"download": {
-					rest: "GET /download",
+				"download.prepare": {
+					rest: "GET /download/prepare",
 					params: {
 						id: "string",
 					},
+					handler: async ctx => await this.ActionDownloadPrepare(ctx),
+					hooks: {
+						after: (ctx, resp: { chunks: string[] }) => {
+							const formatted = resp.chunks.map(chunk =>
+								chunk.replace(
+									path.join("/app", "dist", "public"),
+									""
+								)
+							);
+
+							return { chunks: formatted };
+						},
+					},
+				},
+				"download": {
+					rest: "GET /download",
+					params: {
+						filename: "string",
+					},
 					handler: async ctx => await this.ActionDownload(ctx),
+					hooks: {
+						after: (
+							ctx,
+							resp: { exists: boolean; path: string }
+						) => {
+							if (resp.exists) {
+								const file = resp.path;
+								ctx.meta.$responseType =
+									"application/octet-stream";
+								ctx.meta.$responseHeaders = {
+									"Content-Disposition": `attachment; filename="${
+										path.parse(file).base
+									}"`,
+									"Content-Length": fs.statSync(file).size,
+								};
+
+								return fs.createReadStream(file);
+							}
+
+							ctx.meta.$statusCode = "404";
+							return {
+								message:
+									"Chunk does not found. Try to prepare your download first then try again.",
+							};
+						},
+					},
 				},
 				"chunk.retrieve": {
 					params: {
@@ -174,6 +221,10 @@ export default class FileService extends Service {
 
 	public async ActionUpload(ctx: EventContext) {
 		return await this.fileHandler.handleFileReceive(ctx, "upload");
+	}
+
+	public async ActionDownloadPrepare(ctx: EventContext) {
+		return await this.fileHandler.handleFileDownloadPrepare(ctx);
 	}
 
 	public async ActionDownload(ctx: EventContext) {

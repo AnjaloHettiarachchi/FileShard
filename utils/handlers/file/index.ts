@@ -185,7 +185,15 @@ export default class FileHandler {
 		});
 	}
 
-	public async handleFileDownload(ctx: EventContext): Promise<any> {
+	public async handleFileDownload(ctx: EventContext) {
+		const chunkDirAndName = ctx.params.filename;
+		const chunkPath = path.join(downloadDir, chunkDirAndName);
+		return { exists: fs.existsSync(chunkPath), path: chunkPath };
+	}
+
+	public async handleFileDownloadPrepare(
+		ctx: EventContext
+	): Promise<{ chunks: string[] }> {
 		const fileId = ctx.params.id;
 		const downloadLinkList: string[] = [];
 
